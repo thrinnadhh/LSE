@@ -123,6 +123,28 @@ CREATE INDEX idx_shops_status ON shops(status);
 CREATE INDEX idx_shops_city_zone ON shops(city, zone_code);
 CREATE INDEX idx_shops_location ON shops USING GIST(location);
 
+-- Phase-2 Shop Service compatibility fields
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id);
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+
+-- Phase-2 geospatial shop tables
+CREATE TABLE IF NOT EXISTS shop_locations (
+  shop_id UUID PRIMARY KEY REFERENCES shops(id) ON DELETE CASCADE,
+  location GEOGRAPHY(POINT, 4326)
+);
+
+CREATE INDEX IF NOT EXISTS idx_shop_locations_geo ON shop_locations USING GIST(location);
+
+CREATE TABLE IF NOT EXISTS shop_hours (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+  day_of_week INT,
+  open_time TIME,
+  close_time TIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_shop_hours_shop_id ON shop_hours(shop_id);
+
 CREATE TABLE global_products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(200) NOT NULL,
