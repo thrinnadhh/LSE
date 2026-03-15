@@ -1,0 +1,15 @@
+{
+  "name": "local-search-engine",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "start:api": "node repo/apps/api-gateway/src/server.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "ioredis": "^5.4.2",
+    "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "zod": "^3.24.1"
+  }
+}

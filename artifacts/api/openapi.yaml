@@ -1,0 +1,540 @@
+openapi: 3.0.3
+info:
+  title: Hyperlocal Marketplace API
+  version: 1.0.0
+  description: Core API contracts for customer, shop, driver, and admin applications.
+servers:
+  - url: https://api.example.com
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Search
+  - name: Cart
+  - name: Orders
+  - name: Chat
+  - name: Driver
+
+paths:
+  /v1/auth/otp/send:
+    post:
+      tags: [Auth]
+      summary: Send OTP to phone number
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [phone]
+              properties:
+                phone:
+                  type: string
+      responses:
+        '200':
+          description: OTP sent
+
+  /v1/auth/otp/verify:
+    post:
+      tags: [Auth]
+      summary: Verify OTP and issue tokens
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OtpVerifyRequest'
+      responses:
+        '200':
+          description: Auth success
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthTokenResponse'
+
+  /v1/search:
+    get:
+      tags: [Search]
+      summary: Unified product and shop search
+      parameters:
+        - in: query
+          name: q
+          schema:
+            type: string
+          required: true
+        - in: query
+          name: lat
+          schema:
+            type: number
+            format: double
+          required: true
+        - in: query
+          name: lng
+          schema:
+            type: number
+            format: double
+          required: true
+        - in: query
+          name: radiusKm
+          schema:
+            type: number
+            default: 5
+      responses:
+        '200':
+          description: Search results
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SearchResponse'
+
+  /v1/shops/nearby:
+    get:
+      tags: [Search]
+      summary: Nearby shops by location
+      parameters:
+        - in: query
+          name: lat
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: lng
+          required: true
+          schema:
+            type: number
+        - in: query
+          name: radiusKm
+          schema:
+            type: number
+            default: 5
+      responses:
+        '200':
+          description: Nearby shops
+
+  /v1/cart/items:
+    post:
+      tags: [Cart]
+      summary: Add item to cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AddCartItemRequest'
+      responses:
+        '200':
+          description: Item added
+
+  /v1/cart:
+    get:
+      tags: [Cart]
+      summary: Get active cart
+      responses:
+        '200':
+          description: Cart details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CartResponse'
+
+  /v1/orders/checkout:
+    post:
+      tags: [Orders]
+      summary: Create order from cart
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CheckoutRequest'
+      responses:
+        '201':
+          description: Order created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+
+  /v1/orders/{orderId}:
+    get:
+      tags: [Orders]
+      summary: Get order details
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OrderResponse'
+
+  /v1/orders/{orderId}/cancel:
+    post:
+      tags: [Orders]
+      summary: Cancel order if allowed
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Cancellation accepted
+
+  /v1/orders/{orderId}/tracking:
+    get:
+      tags: [Orders]
+      summary: Get live tracking snapshot
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Tracking details
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrackingResponse'
+
+  /v1/chat/conversations:
+    post:
+      tags: [Chat]
+      summary: Start or return conversation
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [shopId]
+              properties:
+                shopId:
+                  type: string
+                  format: uuid
+                orderId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          description: Conversation payload
+
+  /v1/chat/conversations/{conversationId}/messages:
+    get:
+      tags: [Chat]
+      summary: List messages
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Message list
+
+    post:
+      tags: [Chat]
+      summary: Send message
+      parameters:
+        - in: path
+          name: conversationId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SendMessageRequest'
+      responses:
+        '201':
+          description: Message sent
+
+  /v1/chat/offers:
+    post:
+      tags: [Chat]
+      summary: Create price negotiation offer
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOfferRequest'
+      responses:
+        '201':
+          description: Offer created
+
+  /v1/chat/offers/{offerId}/respond:
+    post:
+      tags: [Chat]
+      summary: Accept or reject offer
+      parameters:
+        - in: path
+          name: offerId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status:
+                  type: string
+                  enum: [ACCEPTED, REJECTED]
+      responses:
+        '200':
+          description: Offer updated
+
+  /v1/driver/location:
+    post:
+      tags: [Driver]
+      summary: Ingest driver location update
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverLocationRequest'
+      responses:
+        '202':
+          description: Location accepted
+
+  /v1/driver/tasks/{taskId}/accept:
+    post:
+      tags: [Driver]
+      summary: Accept dispatch task
+      parameters:
+        - in: path
+          name: taskId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Task accepted
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    OtpVerifyRequest:
+      type: object
+      required: [phone, otp, deviceId]
+      properties:
+        phone:
+          type: string
+        otp:
+          type: string
+        deviceId:
+          type: string
+
+    AuthTokenResponse:
+      type: object
+      properties:
+        accessToken:
+          type: string
+        refreshToken:
+          type: string
+        user:
+          $ref: '#/components/schemas/User'
+
+    User:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        role:
+          type: string
+          enum: [CUSTOMER, SHOP_OWNER, DRIVER, ADMIN]
+        fullName:
+          type: string
+        phone:
+          type: string
+
+    SearchResponse:
+      type: object
+      properties:
+        products:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProductHit'
+        shops:
+          type: array
+          items:
+            $ref: '#/components/schemas/ShopHit'
+        offers:
+          type: array
+          items:
+            type: object
+
+    ProductHit:
+      type: object
+      properties:
+        productId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        shopId:
+          type: string
+          format: uuid
+        price:
+          type: number
+        distanceKm:
+          type: number
+
+    ShopHit:
+      type: object
+      properties:
+        shopId:
+          type: string
+          format: uuid
+        name:
+          type: string
+        rating:
+          type: number
+        distanceKm:
+          type: number
+
+    AddCartItemRequest:
+      type: object
+      required: [shopId, inventoryId, qty]
+      properties:
+        shopId:
+          type: string
+          format: uuid
+        inventoryId:
+          type: string
+          format: uuid
+        qty:
+          type: integer
+          minimum: 1
+
+    CartResponse:
+      type: object
+      properties:
+        cartId:
+          type: string
+          format: uuid
+        items:
+          type: array
+          items:
+            type: object
+        subtotal:
+          type: number
+
+    CheckoutRequest:
+      type: object
+      required: [addressId, paymentMethod]
+      properties:
+        addressId:
+          type: string
+          format: uuid
+        paymentMethod:
+          type: string
+          enum: [COD, UPI, CARD]
+        idempotencyKey:
+          type: string
+
+    OrderResponse:
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        totals:
+          type: object
+        items:
+          type: array
+          items:
+            type: object
+
+    TrackingResponse:
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        status:
+          type: string
+        driver:
+          type: object
+        etaSeconds:
+          type: integer
+
+    SendMessageRequest:
+      type: object
+      required: [type]
+      properties:
+        type:
+          type: string
+          enum: [TEXT, SYSTEM, PRICE_OFFER, IMAGE]
+        body:
+          type: string
+        metadata:
+          type: object
+
+    CreateOfferRequest:
+      type: object
+      required: [conversationId, inventoryId, amount]
+      properties:
+        conversationId:
+          type: string
+          format: uuid
+        inventoryId:
+          type: string
+          format: uuid
+        amount:
+          type: number
+          minimum: 0
+        expiresAt:
+          type: string
+          format: date-time
+
+    DriverLocationRequest:
+      type: object
+      required: [driverId, lat, lng, recordedAt]
+      properties:
+        driverId:
+          type: string
+          format: uuid
+        lat:
+          type: number
+        lng:
+          type: number
+        speedKmph:
+          type: number
+        heading:
+          type: number
+        recordedAt:
+          type: string
+          format: date-time
