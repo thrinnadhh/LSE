@@ -124,7 +124,6 @@ async function searchProducts({ query }) {
         },
       },
       sort: [
-        { _score: "desc" },
         {
           _geo_distance: {
             location: {
@@ -147,7 +146,7 @@ async function searchProducts({ query }) {
     shopName: hit._source.shop_name,
     category: hit._source.category,
     price: hit._source.price,
-    distance: hit.sort?.[1] !== undefined ? Number(hit.sort[1]) : undefined,
+    distance: hit.sort ? Math.round(hit.sort[0]) : null,
   }));
 }
 
