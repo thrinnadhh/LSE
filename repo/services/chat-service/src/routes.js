@@ -69,6 +69,62 @@ function createChatRouter({ db, onMessagePersisted }) {
     })
   );
 
+  router.post(
+    "/quotes",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      try {
+        const quote = await chatService.createQuote({
+          body: req.body,
+          auth: req.auth,
+          db,
+        });
+
+        res.status(201).json(quote);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          throw new ApiError(400, err.issues[0].message);
+        }
+        throw err;
+      }
+    })
+  );
+
+  router.get(
+    "/conversations/:conversationId/quotes",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const items = await chatService.listConversationQuotes({
+        conversationId: req.params.conversationId,
+        auth: req.auth,
+        db,
+      });
+
+      res.status(200).json({ items });
+    })
+  );
+
+  router.post(
+    "/quotes/:quoteId/accept",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      try {
+        const quote = await chatService.acceptQuote({
+          quoteId: req.params.quoteId,
+          auth: req.auth,
+          db,
+        });
+
+        res.status(200).json(quote);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          throw new ApiError(400, err.issues[0].message);
+        }
+        throw err;
+      }
+    })
+  );
+
   return router;
 }
 
