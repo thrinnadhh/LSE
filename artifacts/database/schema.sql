@@ -147,6 +147,37 @@ CREATE TABLE IF NOT EXISTS shop_hours (
 
 CREATE INDEX IF NOT EXISTS idx_shop_hours_shop_id ON shop_hours(shop_id);
 
+-- Phase-3 products and inventory tables
+CREATE TABLE IF NOT EXISTS products (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  shop_id UUID REFERENCES shops(id) ON DELETE CASCADE,
+  name TEXT NOT NULL,
+  description TEXT,
+  category TEXT,
+  price NUMERIC(10,2) NOT NULL,
+  image_url TEXT,
+  is_active BOOLEAN DEFAULT TRUE,
+  created_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_products_shop_id ON products(shop_id);
+CREATE INDEX IF NOT EXISTS idx_products_shop_active ON products(shop_id, is_active);
+
+CREATE TABLE IF NOT EXISTS inventory (
+  product_id UUID PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+  stock_quantity INT DEFAULT 0,
+  reserved_quantity INT DEFAULT 0,
+  updated_at TIMESTAMPTZ DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS product_images (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  product_id UUID REFERENCES products(id) ON DELETE CASCADE,
+  image_url TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_product_images_product_id ON product_images(product_id);
+
 CREATE TABLE global_products (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   name VARCHAR(200) NOT NULL,

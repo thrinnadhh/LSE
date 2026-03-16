@@ -57,7 +57,7 @@ function createShopRouter({ db }) {
   router.get(
     "/:id",
     asyncHandler(async (req, res) => {
-      const shop = await shopService.getShopById({ id: req.params.id, db });
+      const shop = await shopService.getShopById({ id: req.params.id, query: req.query, db });
       res.status(200).json(shop);
     })
   );

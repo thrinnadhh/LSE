@@ -30,6 +30,15 @@ const nearbyQuerySchema = z.object({
   radius: z.coerce.number().positive().max(50000),
 });
 
+const shopDetailsQuerySchema = z
+  .object({
+    lat: z.coerce.number().min(-90).max(90).optional(),
+    lng: z.coerce.number().min(-180).max(180).optional(),
+  })
+  .refine((value) => (value.lat === undefined) === (value.lng === undefined), {
+    message: "lat and lng must be provided together",
+  });
+
 async function ensureShopTables(db) {
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id);`);
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;`);
@@ -71,18 +80,38 @@ function normalizeRole(role) {
 function mapShop(row) {
   return {
     id: row.id,
+    shopId: row.id,
     ownerId: row.owner_id,
     name: row.name,
     description: row.description,
     category: row.category,
     phone: row.phone,
+    rating: row.rating_avg !== null && row.rating_avg !== undefined ? Number(row.rating_avg) : 0,
+    ratingAvg: row.rating_avg !== null && row.rating_avg !== undefined ? Number(row.rating_avg) : 0,
+    ratingCount: row.rating_count !== null && row.rating_count !== undefined ? Number(row.rating_count) : 0,
+    openingHours: row.opening_hours || {},
+    opening_hours: row.opening_hours || {},
     isActive: row.is_active,
     isOpen: row.is_open !== null && row.is_open !== undefined ? Boolean(row.is_open) : true,
+    is_open: row.is_open !== null && row.is_open !== undefined ? Boolean(row.is_open) : true,
     acceptingOrders: row.accepting_orders !== null && row.accepting_orders !== undefined ? Boolean(row.accepting_orders) : true,
+    accepting_orders: row.accepting_orders !== null && row.accepting_orders !== undefined ? Boolean(row.accepting_orders) : true,
     lat: row.lat !== null ? Number(row.lat) : null,
     lng: row.lng !== null ? Number(row.lng) : null,
     createdAt: row.created_at,
-    distance: row.distance_meters !== null && row.distance_meters !== undefined ? Number(row.distance_meters) : undefined,
+    distance: row.distance_meters !== null && row.distance_meters !== undefined ? Math.round(Number(row.distance_meters)) : undefined,
+  };
+}
+
+function mapNearbyShop(row) {
+  return {
+    shopId: row.id,
+    name: row.name,
+    category: row.category,
+    rating: row.rating_avg !== null && row.rating_avg !== undefined ? Number(row.rating_avg) : 0,
+    isOpen: row.is_open !== null && row.is_open !== undefined ? Boolean(row.is_open) : true,
+    acceptingOrders: row.accepting_orders !== null && row.accepting_orders !== undefined ? Boolean(row.accepting_orders) : true,
+    distance: row.distance_meters !== null && row.distance_meters !== undefined ? Math.round(Number(row.distance_meters)) : undefined,
   };
 }
 
@@ -143,7 +172,9 @@ async function createShop({ body, auth, db }) {
   };
 }
 
-async function getShopById({ id, db }) {
+async function getShopById({ id, query = {}, db }) {
+  const input = shopDetailsQuerySchema.parse(query);
+
   const result = await db.query(
     `
       SELECT
@@ -153,18 +184,28 @@ async function getShopById({ id, db }) {
         s.description,
         s.category,
         s.phone,
+        s.opening_hours,
+        s.rating_avg,
+        s.rating_count,
         COALESCE(s.is_active, TRUE) AS is_active,
         s.is_open,
         s.accepting_orders,
         s.created_at,
-        ST_Y(COALESCE(sl.location, s.location)::geometry) AS lat,
-        ST_X(COALESCE(sl.location, s.location)::geometry) AS lng
+        ST_Y(s.location::geometry) AS lat,
+        ST_X(s.location::geometry) AS lng,
+        CASE
+          WHEN $2::double precision IS NOT NULL AND $3::double precision IS NOT NULL
+            THEN ST_Distance(
+              s.location,
+              ST_SetSRID(ST_Point($3, $2), 4326)::geography
+            )
+          ELSE NULL
+        END AS distance_meters
       FROM shops s
-      LEFT JOIN shop_locations sl ON s.id = sl.shop_id
       WHERE s.id = $1
       LIMIT 1
     `,
-    [id]
+    [id, input.lat ?? null, input.lng ?? null]
   );
 
   if (result.rowCount === 0) {
@@ -263,36 +304,30 @@ async function findNearbyShops({ query, db }) {
     `
       SELECT
         s.id,
-        COALESCE(s.owner_id, s.owner_user_id) AS owner_id,
         s.name,
-        s.description,
         s.category,
-        s.phone,
-        COALESCE(s.is_active, TRUE) AS is_active,
+        s.rating_avg,
         s.is_open,
         s.accepting_orders,
-        s.created_at,
-        ST_Y(l.location::geometry) AS lat,
-        ST_X(l.location::geometry) AS lng,
         ST_Distance(
-          l.location,
+          s.location,
           ST_SetSRID(ST_Point($2, $1), 4326)::geography
         ) AS distance_meters
       FROM shops s
-      JOIN shop_locations l ON s.id = l.shop_id
       WHERE COALESCE(s.is_active, TRUE) = TRUE
+        AND s.status = 'ACTIVE'
         AND ST_DWithin(
-          l.location,
+          s.location,
           ST_SetSRID(ST_Point($2, $1), 4326)::geography,
           $3
         )
       ORDER BY distance_meters ASC
-      LIMIT 20
+      LIMIT 50
     `,
     [input.lat, input.lng, input.radius]
   );
 
-  return result.rows.map(mapShop);
+  return result.rows.map(mapNearbyShop);
 }
 
 const availabilitySchema = z.object({
