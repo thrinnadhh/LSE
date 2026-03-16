@@ -8,7 +8,7 @@ function validationMessage(err) {
   return err.issues?.[0]?.message || "Invalid request";
 }
 
-function createProductRouter({ db }) {
+function createProductRouter({ db, producer }) {
   const router = express.Router();
 
   router.post(
@@ -16,7 +16,7 @@ function createProductRouter({ db }) {
     requireAuth,
     asyncHandler(async (req, res) => {
       try {
-        const product = await productService.createProduct({ body: req.body, auth: req.auth, db });
+        const product = await productService.createProduct({ body: req.body, auth: req.auth, db, producer });
         res.status(201).json(product);
       } catch (err) {
         if (err instanceof z.ZodError) {

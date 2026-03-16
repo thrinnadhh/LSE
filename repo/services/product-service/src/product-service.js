@@ -1,6 +1,6 @@
 const { z } = require("zod");
 const { ApiError } = require("../../../apps/api-gateway/src/lib/errors");
-const { indexProductDocument } = require("../../search-service/src/search-service");
+const { PRODUCT_CREATED_TOPIC } = require("../../search-service/src/search-indexer");
 
 const createProductSchema = z.object({
   shopId: z.string().uuid().optional(),
@@ -132,7 +132,7 @@ async function resolveOwnedShopId({ requestedShopId, ownerId, db }) {
   return ownedShops.rows[0].id;
 }
 
-async function createProduct({ body, auth, db }) {
+async function createProduct({ body, auth, db, producer }) {
   if (normalizeRole(auth.role) !== "shop_owner") {
     throw new ApiError(403, "Only shop_owner can create products");
   }
@@ -175,7 +175,21 @@ async function createProduct({ body, auth, db }) {
     );
   }
 
-  await indexProductDocument({ productId: product.id, db });
+  await producer.send({
+    topic: PRODUCT_CREATED_TOPIC,
+    messages: [
+      {
+        key: product.id,
+        value: JSON.stringify({
+          productId: product.id,
+          shopId: product.shop_id,
+          productName: product.name,
+          category: product.category,
+          price: Number(product.price),
+        }),
+      },
+    ],
+  });
 
   const full = await getProductById({ id: product.id, db });
   return full;
