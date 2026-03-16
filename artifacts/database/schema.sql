@@ -126,6 +126,8 @@ CREATE INDEX idx_shops_location ON shops USING GIST(location);
 -- Phase-2 Shop Service compatibility fields
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id);
 ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT TRUE;
+ALTER TABLE shops ADD COLUMN IF NOT EXISTS accepting_orders BOOLEAN DEFAULT TRUE;
 
 -- Phase-2 geospatial shop tables
 CREATE TABLE IF NOT EXISTS shop_locations (

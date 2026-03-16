@@ -33,6 +33,8 @@ const nearbyQuerySchema = z.object({
 async function ensureShopTables(db) {
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id);`);
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;`);
+  await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT TRUE;`);
+  await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS accepting_orders BOOLEAN DEFAULT TRUE;`);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS shop_locations (
@@ -75,6 +77,8 @@ function mapShop(row) {
     category: row.category,
     phone: row.phone,
     isActive: row.is_active,
+    isOpen: row.is_open !== null && row.is_open !== undefined ? Boolean(row.is_open) : true,
+    acceptingOrders: row.accepting_orders !== null && row.accepting_orders !== undefined ? Boolean(row.accepting_orders) : true,
     lat: row.lat !== null ? Number(row.lat) : null,
     lng: row.lng !== null ? Number(row.lng) : null,
     createdAt: row.created_at,
@@ -150,6 +154,8 @@ async function getShopById({ id, db }) {
         s.category,
         s.phone,
         COALESCE(s.is_active, TRUE) AS is_active,
+        s.is_open,
+        s.accepting_orders,
         s.created_at,
         ST_Y(COALESCE(sl.location, s.location)::geometry) AS lat,
         ST_X(COALESCE(sl.location, s.location)::geometry) AS lng
@@ -263,6 +269,8 @@ async function findNearbyShops({ query, db }) {
         s.category,
         s.phone,
         COALESCE(s.is_active, TRUE) AS is_active,
+        s.is_open,
+        s.accepting_orders,
         s.created_at,
         ST_Y(l.location::geometry) AS lat,
         ST_X(l.location::geometry) AS lng,
@@ -287,10 +295,39 @@ async function findNearbyShops({ query, db }) {
   return result.rows.map(mapShop);
 }
 
+const availabilitySchema = z.object({
+  acceptingOrders: z.boolean(),
+});
+
+async function patchAvailability({ id, body, auth, db }) {
+  if (normalizeRole(auth.role) !== "shop_owner") {
+    throw new ApiError(403, "Only shop_owner can update shop availability");
+  }
+
+  const input = availabilitySchema.parse(body);
+
+  const ownershipCheck = await db.query(
+    `SELECT id FROM shops WHERE id = $1 AND (owner_user_id = $2 OR owner_id = $2) LIMIT 1`,
+    [id, auth.sub]
+  );
+
+  if (ownershipCheck.rowCount === 0) {
+    throw new ApiError(403, "You can only update your own shop");
+  }
+
+  await db.query(
+    `UPDATE shops SET accepting_orders = $1, updated_at = NOW() WHERE id = $2`,
+    [input.acceptingOrders, id]
+  );
+
+  return getShopById({ id, db });
+}
+
 module.exports = {
   ensureShopTables,
   createShop,
   getShopById,
   updateShop,
   findNearbyShops,
+  patchAvailability,
 };
