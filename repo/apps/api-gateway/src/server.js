@@ -13,6 +13,8 @@ const {
   createShopProductsRouter,
 } = require("../../../services/product-service/src/routes");
 const { ensureProductTables } = require("../../../services/product-service/src/product-service");
+const { createSearchRouter } = require("../../../services/search-service/src/routes");
+const { ensureProductsIndex } = require("../../../services/search-service/src/search-service");
 
 const app = express();
 
@@ -24,6 +26,7 @@ app.use("/shops", createShopRouter({ db: pool }));
 app.use("/shops", createShopProductsRouter({ db: pool }));
 app.use("/products", createProductRouter({ db: pool }));
 app.use("/inventory", createInventoryRouter({ db: pool }));
+app.use("/search", createSearchRouter());
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
@@ -38,6 +41,7 @@ async function start() {
   await ensureAuthTables();
   await ensureShopTables(pool);
   await ensureProductTables(pool);
+  await ensureProductsIndex();
 
   app.listen(config.port, () => {
     console.log(`api-gateway listening on port ${config.port}`);

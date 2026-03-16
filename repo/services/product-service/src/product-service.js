@@ -1,5 +1,6 @@
 const { z } = require("zod");
 const { ApiError } = require("../../../apps/api-gateway/src/lib/errors");
+const { indexProductDocument } = require("../../search-service/src/search-service");
 
 const createProductSchema = z.object({
   shopId: z.string().uuid().optional(),
@@ -173,6 +174,8 @@ async function createProduct({ body, auth, db }) {
       [product.id, input.imageUrl]
     );
   }
+
+  await indexProductDocument({ productId: product.id, db });
 
   const full = await getProductById({ id: product.id, db });
   return full;
