@@ -15,6 +15,24 @@ tags:
   - name: Orders
   - name: Chat
   - name: Driver
+  - name: Dispatch
+
+x-events:
+  ORDER_CREATED:
+    tags: [Dispatch]
+    summary: Published after a quote acceptance creates an order.
+    description: Consumed by dispatch-service queue worker. The worker enqueues order IDs in Redis (`dispatch:orders`), finds nearest drivers from Redis GEO index (`drivers:geo`) within 3 km, checks Redis busy lock keys (`driver:busy:{driverId}`), and assigns first available driver. Busy locks are set with 30-minute TTL and retries are requeued every 10 seconds up to 10 attempts.
+    producer: api-gateway/chat-service
+    consumer: dispatch-service
+    x-dispatch-mechanics:
+      queueKey: dispatch:orders
+      geoKey: drivers:geo
+      busyLockKeyPattern: driver:busy:{driverId}
+      busyLockTtlSeconds: 1800
+      retryDelaySeconds: 10
+      maxRetries: 10
+    payload:
+      $ref: '#/components/schemas/OrderCreatedEvent'
 
 paths:
   /v1/auth/otp/send:
@@ -335,6 +353,190 @@ paths:
         '200':
           description: Task accepted
 
+  /drivers:
+    get:
+      tags: [Driver]
+      summary: List drivers
+      description: Admin only. Returns all drivers with current online and coordinate state.
+      responses:
+        '200':
+          description: Driver list
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverListResponse'
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Only admin can access drivers
+
+    post:
+      tags: [Driver]
+      summary: Create driver
+      description: Admin only. Creates a driver profile with offline initial state.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateDriverRequest'
+      responses:
+        '201':
+          description: Driver created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverSummary'
+        '400':
+          description: Validation error
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Only admin can create drivers
+
+  /drivers/location:
+    post:
+      tags: [Driver]
+      summary: Update driver location
+      description: Driver only. Creates or updates the authenticated driver's live location and writes the coordinates into Redis GEO index (`drivers:geo`) for dispatch proximity lookups.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DriverLocationUpdateRequest'
+      responses:
+        '200':
+          description: Driver location updated
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DriverLocationResponse'
+        '400':
+          description: Validation error
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Only drivers can update location
+
+  /orders/{orderId}/assign-driver:
+    post:
+      tags: [Orders]
+      summary: Assign driver to order
+      description: Admin or dispatch service only. Assigns a driver and marks the order as ASSIGNED.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AssignDriverRequest'
+      responses:
+        '200':
+          description: Order assigned to driver
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeOrderResponse'
+        '400':
+          description: Validation or state transition error
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Caller is not allowed to assign drivers
+        '404':
+          description: Order or driver not found
+
+  /orders/{orderId}/pickup:
+    post:
+      tags: [Orders]
+      summary: Mark order as picked up
+      description: Driver only. Allowed when the order is currently ASSIGNED to the authenticated driver.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order moved to PICKED_UP
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeOrderResponse'
+        '400':
+          description: Invalid order state
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Caller is not the assigned driver
+        '404':
+          description: Order or driver profile not found
+
+  /orders/{orderId}/start-delivery:
+    post:
+      tags: [Orders]
+      summary: Start delivery for order
+      description: Driver only. Allowed when the order is currently PICKED_UP by the authenticated driver.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order moved to DELIVERING
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeOrderResponse'
+        '400':
+          description: Invalid order state
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Caller is not the assigned driver
+        '404':
+          description: Order or driver profile not found
+
+  /orders/{orderId}/complete:
+    post:
+      tags: [Orders]
+      summary: Complete delivery for order
+      description: Driver only. Allowed when the order is currently DELIVERING by the authenticated driver.
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Order moved to DELIVERED
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RuntimeOrderResponse'
+        '400':
+          description: Invalid order state
+        '401':
+          description: Authorization token is required
+        '403':
+          description: Caller is not the assigned driver
+        '404':
+          description: Order or driver profile not found
+
 components:
   securitySchemes:
     bearerAuth:
@@ -536,5 +738,172 @@ components:
         heading:
           type: number
         recordedAt:
+          type: string
+          format: date-time
+
+    CreateDriverRequest:
+      type: object
+      required: [name, phone, vehicleType, vehicleNumber]
+      properties:
+        name:
+          type: string
+        phone:
+          type: string
+        vehicleType:
+          type: string
+        vehicleNumber:
+          type: string
+
+    DriverSummary:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        vehicleType:
+          type: string
+          nullable: true
+        vehicleNumber:
+          type: string
+          nullable: true
+        isOnline:
+          type: boolean
+        lat:
+          type: number
+          format: double
+          nullable: true
+        lng:
+          type: number
+          format: double
+          nullable: true
+
+    DriverListResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/DriverSummary'
+
+    DriverLocationUpdateRequest:
+      type: object
+      required: [lat, lng]
+      properties:
+        lat:
+          type: number
+          format: double
+          minimum: -90
+          maximum: 90
+        lng:
+          type: number
+          format: double
+          minimum: -180
+          maximum: 180
+
+    DriverLocationResponse:
+      type: object
+      properties:
+        driverId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+          format: uuid
+        name:
+          type: string
+          nullable: true
+        phone:
+          type: string
+          nullable: true
+        vehicleType:
+          type: string
+          nullable: true
+        vehicleNumber:
+          type: string
+          nullable: true
+        isActive:
+          type: boolean
+        isOnline:
+          type: boolean
+        lat:
+          type: number
+          format: double
+          nullable: true
+        lng:
+          type: number
+          format: double
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    AssignDriverRequest:
+      type: object
+      required: [driverId]
+      properties:
+        driverId:
+          type: string
+          format: uuid
+
+    RuntimeOrderItem:
+      type: object
+      properties:
+        productName:
+          type: string
+        quantity:
+          type: integer
+        unitPrice:
+          type: number
+        subtotal:
+          type: number
+
+    RuntimeOrderResponse:
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [CREATED, CONFIRMED, ASSIGNED, PICKED_UP, DELIVERING, DELIVERED]
+        customerId:
+          type: string
+          format: uuid
+        shopId:
+          type: string
+          format: uuid
+        driverId:
+          type: string
+          format: uuid
+          nullable: true
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/RuntimeOrderItem'
+        grandTotal:
+          type: number
+        createdAt:
+          type: string
+          format: date-time
+        updatedAt:
+          type: string
+          format: date-time
+
+    OrderCreatedEvent:
+      type: object
+      properties:
+        orderId:
+          type: string
+          format: uuid
+        createdAt:
           type: string
           format: date-time

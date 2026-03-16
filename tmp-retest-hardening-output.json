@@ -1,0 +1,14 @@
+step=auth
+node:internal/deps/undici/undici:15845
+      Error.captureStackTrace(err);
+            ^
+
+DOMException [AbortError]: This operation was aborted
+    at node:internal/deps/undici/undici:15845:13
+    at process.processTicksAndRejections (node:internal/process/task_queues:103:5)
+    at async req (/Users/trinadh/projects/LocalSearchEngine/tmp-retest-hardening.js:13:11)
+    at async auth (/Users/trinadh/projects/LocalSearchEngine/tmp-retest-hardening.js:48:16)
+    at async /Users/trinadh/projects/LocalSearchEngine/tmp-retest-hardening.js:60:22
+
+Node.js v24.12.0
+EXIT:1

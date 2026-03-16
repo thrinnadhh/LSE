@@ -3,7 +3,12 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "start:api": "node repo/apps/api-gateway/src/server.js"
+    "start:api": "node repo/apps/api-gateway/src/server.js",
+    "start:tracking": "node repo/services/tracking-service/src/server.js",
+    "test:phase10": "node repo/services/tracking-service/src/phase10-smoke-test.js",
+    "docker:up": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml up -d",
+    "docker:down": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml down",
+    "docker:reset": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml down -v && docker compose -f artifacts/infra/docker/docker-compose.dev.yml up -d"
   },
   "dependencies": {
     "express": "^4.21.2",

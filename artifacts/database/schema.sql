@@ -13,11 +13,10 @@ CREATE TYPE shop_status AS ENUM ('PENDING', 'ACTIVE', 'SUSPENDED', 'REJECTED');
 CREATE TYPE inventory_status AS ENUM ('IN_STOCK', 'LOW_STOCK', 'OUT_OF_STOCK');
 CREATE TYPE order_status AS ENUM (
   'CREATED',
-  'SHOP_ACCEPTED',
-  'PREPARING',
-  'READY_FOR_PICKUP',
-  'DRIVER_ASSIGNED',
-  'OUT_FOR_DELIVERY',
+  'CONFIRMED',
+  'ASSIGNED',
+  'PICKED_UP',
+  'DELIVERING',
   'DELIVERED',
   'CANCELLED'
 );
@@ -262,6 +261,7 @@ CREATE TABLE orders (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   customer_id UUID NOT NULL REFERENCES users(id),
   shop_id UUID NOT NULL REFERENCES shops(id),
+  driver_id UUID,
   delivery_address_id UUID NOT NULL REFERENCES user_addresses(id),
   status order_status NOT NULL DEFAULT 'CREATED',
   subtotal NUMERIC(12,2) NOT NULL CHECK (subtotal >= 0),
@@ -278,6 +278,7 @@ CREATE TABLE orders (
 CREATE INDEX idx_orders_customer_created ON orders(customer_id, created_at DESC);
 CREATE INDEX idx_orders_shop_status ON orders(shop_id, status, created_at DESC);
 CREATE INDEX idx_orders_status_created ON orders(status, created_at DESC);
+CREATE INDEX idx_orders_driver_id ON orders(driver_id);
 
 CREATE TABLE order_items (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -311,9 +312,14 @@ CREATE INDEX idx_order_history_order_time ON order_status_history(order_id, chan
 CREATE TABLE drivers (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   user_id UUID NOT NULL UNIQUE REFERENCES users(id) ON DELETE CASCADE,
+  name VARCHAR(120),
+  phone VARCHAR(20),
   vehicle_type VARCHAR(20) NOT NULL,
   vehicle_number VARCHAR(30),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
   is_online BOOLEAN NOT NULL DEFAULT FALSE,
+  lat DOUBLE PRECISION,
+  lng DOUBLE PRECISION,
   is_available BOOLEAN NOT NULL DEFAULT FALSE,
   zone_code VARCHAR(32),
   rating_avg NUMERIC(3,2) NOT NULL DEFAULT 0,
@@ -323,6 +329,12 @@ CREATE TABLE drivers (
 );
 
 CREATE INDEX idx_drivers_zone_online ON drivers(zone_code, is_online, is_available);
+CREATE INDEX idx_drivers_is_online ON drivers(is_online);
+
+ALTER TABLE orders
+  ADD CONSTRAINT orders_driver_id_fkey
+  FOREIGN KEY (driver_id)
+  REFERENCES drivers(id);
 
 CREATE TABLE driver_locations (
   id BIGSERIAL PRIMARY KEY,

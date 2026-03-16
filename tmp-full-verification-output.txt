@@ -1,0 +1,1850 @@
+=== FULL VERIFICATION REPORT ===
+{
+  "moduleSummary": {
+    "Auth": "PASS",
+    "Shops": "FAIL",
+    "Products": "FAIL",
+    "Search": "PASS",
+    "Chat": "PASS",
+    "Quotes": "PASS",
+    "Orders": "FAIL",
+    "Drivers": "PASS",
+    "Dispatch": "FAIL"
+  },
+  "report": {
+    "modules": {
+      "Auth": {
+        "pass": 10,
+        "fail": 0,
+        "checks": [
+          {
+            "label": "send otp",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "message": "OTP sent successfully",
+                "otp": "582811",
+                "expiresInSeconds": 300
+              },
+              "latencyMs": 56
+            }
+          },
+          {
+            "label": "verify otp creates user",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "accessToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5MDdhNzkwMi1jM2Y2LTRkZjYtODE1OS1lNDg2OTI0MTYzNGEiLCJwaG9uZSI6Ijc5NjcwODg0MTEiLCJyb2xlIjoiY3VzdG9tZXIiLCJ0b2tlblR5cGUiOiJhY2Nlc3MiLCJpYXQiOjE3NzM2NzA4ODQsImV4cCI6MTc3MzY3MTc4NH0.POjypaMDenCDC60M29ZlFeMQFyuEbmwocfcpz4WuiOw",
+                "refreshToken": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiI5MDdhNzkwMi1jM2Y2LTRkZjYtODE1OS1lNDg2OTI0MTYzNGEiLCJwaG9uZSI6Ijc5NjcwODg0MTEiLCJ0b2tlblR5cGUiOiJyZWZyZXNoIiwianRpIjoiZmViYTBhMjYtNjU1My00OGM5LWIyOTctZWQ4NjhiNjUxNWE5IiwiaWF0IjoxNzczNjcwODg0LCJleHAiOjE3NzYyNjI4ODR9.2qDQFMies4hudVBMqWf03m_Rx3aPF_ifVb_TWkvgW7c",
+                "user": {
+                  "id": "907a7902-c3f6-4df6-8159-e4869241634a",
+                  "phone": "7967088411",
+                  "role": "customer",
+                  "fullName": null,
+                  "email": null
+                }
+              },
+              "latencyMs": 30
+            }
+          },
+          {
+            "label": "login existing user returns same id",
+            "ok": true,
+            "detail": {
+              "first": {
+                "id": "907a7902-c3f6-4df6-8159-e4869241634a",
+                "phone": "7967088411",
+                "role": "customer",
+                "fullName": null,
+                "email": null
+              },
+              "second": {
+                "id": "907a7902-c3f6-4df6-8159-e4869241634a",
+                "phone": "7967088411",
+                "role": "customer",
+                "fullName": null,
+                "email": null
+              }
+            }
+          },
+          {
+            "label": "wrong otp rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Invalid OTP"
+              },
+              "latencyMs": 0
+            }
+          },
+          {
+            "label": "otp reuse rejected",
+            "ok": true,
+            "detail": {
+              "reuseVerify2": {
+                "status": 400,
+                "body": {
+                  "error": "OTP expired or not found"
+                },
+                "latencyMs": 1
+              }
+            }
+          },
+          {
+            "label": "otp expired rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "OTP expired or not found"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "invalid phone format rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Invalid"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "users table entry exists",
+            "ok": true,
+            "detail": "7967088411,CUSTOMER"
+          },
+          {
+            "label": "jwt usable on /users/me",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "id": "907a7902-c3f6-4df6-8159-e4869241634a",
+                "phone": "7967088411",
+                "email": null,
+                "fullName": null,
+                "role": "customer",
+                "isActive": true,
+                "createdAt": "2026-03-16T14:21:24.667Z"
+              },
+              "latencyMs": 3
+            }
+          },
+          {
+            "label": "jwt payload has exp/iat",
+            "ok": true,
+            "detail": {
+              "sub": "907a7902-c3f6-4df6-8159-e4869241634a",
+              "phone": "7967088411",
+              "role": "customer",
+              "tokenType": "access",
+              "iat": 1773670884,
+              "exp": 1773671784
+            }
+          }
+        ]
+      },
+      "Shops": {
+        "pass": 5,
+        "fail": 1,
+        "checks": [
+          {
+            "label": "create shop",
+            "ok": true,
+            "detail": {
+              "status": 201,
+              "body": {
+                "id": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "ownerId": "9e0a7b45-1983-4a9c-a007-8b751e4b86e5",
+                "name": "Verify Shop",
+                "description": null,
+                "category": "grocery",
+                "phone": "9999999999",
+                "rating": 0,
+                "ratingAvg": 0,
+                "ratingCount": 0,
+                "openingHours": {},
+                "opening_hours": {},
+                "isActive": true,
+                "isOpen": true,
+                "is_open": true,
+                "acceptingOrders": true,
+                "accepting_orders": true,
+                "lat": 17.385,
+                "lng": 78.4867,
+                "createdAt": "2026-03-16T14:21:24.949Z"
+              },
+              "latencyMs": 22
+            }
+          },
+          {
+            "label": "update shop",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "id": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "ownerId": "9e0a7b45-1983-4a9c-a007-8b751e4b86e5",
+                "name": "Verify Shop",
+                "description": "Updated during verification",
+                "category": "grocery",
+                "phone": "9999999999",
+                "rating": 0,
+                "ratingAvg": 0,
+                "ratingCount": 0,
+                "openingHours": {},
+                "opening_hours": {},
+                "isActive": true,
+                "isOpen": true,
+                "is_open": true,
+                "acceptingOrders": true,
+                "accepting_orders": true,
+                "lat": 17.385,
+                "lng": 78.4867,
+                "createdAt": "2026-03-16T14:21:24.949Z"
+              },
+              "latencyMs": 5
+            }
+          },
+          {
+            "label": "toggle accepting orders",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "id": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "ownerId": "9e0a7b45-1983-4a9c-a007-8b751e4b86e5",
+                "name": "Verify Shop",
+                "description": "Updated during verification",
+                "category": "grocery",
+                "phone": "9999999999",
+                "rating": 0,
+                "ratingAvg": 0,
+                "ratingCount": 0,
+                "openingHours": {},
+                "opening_hours": {},
+                "isActive": true,
+                "isOpen": true,
+                "is_open": true,
+                "acceptingOrders": false,
+                "accepting_orders": false,
+                "lat": 17.385,
+                "lng": 78.4867,
+                "createdAt": "2026-03-16T14:21:24.949Z"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "toggle shop open/closed",
+            "ok": false,
+            "detail": {
+              "toggleOpenAttempt": {
+                "status": 400,
+                "body": {
+                  "error": "No updatable fields provided"
+                },
+                "latencyMs": 2
+              },
+              "openCheck": {
+                "status": 200,
+                "body": {
+                  "id": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                  "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                  "ownerId": "9e0a7b45-1983-4a9c-a007-8b751e4b86e5",
+                  "name": "Verify Shop",
+                  "description": "Updated during verification",
+                  "category": "grocery",
+                  "phone": "9999999999",
+                  "rating": 0,
+                  "ratingAvg": 0,
+                  "ratingCount": 0,
+                  "openingHours": {},
+                  "opening_hours": {},
+                  "isActive": true,
+                  "isOpen": true,
+                  "is_open": true,
+                  "acceptingOrders": false,
+                  "accepting_orders": false,
+                  "lat": 17.385,
+                  "lng": 78.4867,
+                  "createdAt": "2026-03-16T14:21:24.949Z"
+                },
+                "latencyMs": 1
+              }
+            }
+          },
+          {
+            "label": "owner can create multiple shops",
+            "ok": true,
+            "detail": {
+              "status": 201,
+              "body": {
+                "id": "addcbf54-caff-412a-8d1a-1ca85248308b",
+                "shopId": "addcbf54-caff-412a-8d1a-1ca85248308b",
+                "ownerId": "9e0a7b45-1983-4a9c-a007-8b751e4b86e5",
+                "name": "Verify Shop 2",
+                "description": null,
+                "category": "grocery",
+                "phone": "9999999998",
+                "rating": 0,
+                "ratingAvg": 0,
+                "ratingCount": 0,
+                "openingHours": {},
+                "opening_hours": {},
+                "isActive": true,
+                "isOpen": true,
+                "is_open": true,
+                "acceptingOrders": true,
+                "accepting_orders": true,
+                "lat": 17.386,
+                "lng": 78.4869,
+                "createdAt": "2026-03-16T14:21:24.981Z"
+              },
+              "latencyMs": 3
+            }
+          },
+          {
+            "label": "unauthorized shop creation rejected",
+            "ok": true,
+            "detail": {
+              "status": 403,
+              "body": {
+                "error": "Only shop_owner can create shops"
+              },
+              "latencyMs": 2
+            }
+          }
+        ]
+      },
+      "Products": {
+        "pass": 6,
+        "fail": 1,
+        "checks": [
+          {
+            "label": "create product",
+            "ok": true,
+            "detail": {
+              "status": 201,
+              "body": {
+                "id": "802d22f4-9071-43ab-b1ee-69662b532c42",
+                "productId": "802d22f4-9071-43ab-b1ee-69662b532c42",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "name": "Milk 1L",
+                "description": null,
+                "category": "dairy",
+                "price": 60,
+                "imageUrl": null,
+                "isActive": true,
+                "createdAt": "2026-03-16T14:21:24.989Z",
+                "stockQuantity": 20,
+                "reservedQuantity": 0,
+                "availableQuantity": 20,
+                "available_quantity": 20,
+                "inStock": true
+              },
+              "latencyMs": 11
+            }
+          },
+          {
+            "label": "update inventory",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "id": "802d22f4-9071-43ab-b1ee-69662b532c42",
+                "productId": "802d22f4-9071-43ab-b1ee-69662b532c42",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "name": "Milk 1L",
+                "description": null,
+                "category": "dairy",
+                "price": 60,
+                "imageUrl": null,
+                "isActive": true,
+                "createdAt": "2026-03-16T14:21:24.989Z",
+                "stockQuantity": 30,
+                "reservedQuantity": 0,
+                "availableQuantity": 30,
+                "available_quantity": 30,
+                "inStock": true
+              },
+              "latencyMs": 3
+            }
+          },
+          {
+            "label": "fetch shop products",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "items": [
+                  {
+                    "id": "802d22f4-9071-43ab-b1ee-69662b532c42",
+                    "productId": "802d22f4-9071-43ab-b1ee-69662b532c42",
+                    "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                    "name": "Milk 1L",
+                    "description": null,
+                    "category": "dairy",
+                    "price": 60,
+                    "imageUrl": null,
+                    "isActive": true,
+                    "createdAt": "2026-03-16T14:21:24.989Z",
+                    "stockQuantity": 30,
+                    "reservedQuantity": 0,
+                    "availableQuantity": 30,
+                    "available_quantity": 30,
+                    "inStock": true
+                  }
+                ]
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "invalid price rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Number must be greater than 0"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "negative stock rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Number must be greater than or equal to 0"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "unauthorized product creation rejected",
+            "ok": true,
+            "detail": {
+              "status": 403,
+              "body": {
+                "error": "Only shop_owner can create products"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "disable product",
+            "ok": false,
+            "detail": {
+              "status": 404,
+              "body": {
+                "raw": "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n<meta charset=\"utf-8\">\n<title>Error</title>\n</head>\n<body>\n<pre>Cannot PATCH /products/802d22f4-9071-43ab-b1ee-69662b532c42</pre>\n</body>\n</html>\n"
+              },
+              "latencyMs": 0
+            }
+          }
+        ]
+      },
+      "Search": {
+        "pass": 7,
+        "fail": 0,
+        "checks": [
+          {
+            "label": "keyword product search",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "items": [
+                  {
+                    "productId": "a1a72d22-dade-408a-8bfb-7dd18027bf49",
+                    "shopId": "8530cc0d-2c3a-4b67-8ca6-0f62ce439cd0",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "0fbe360e-8401-4910-b250-70f7b857993a",
+                    "shopId": "11176d60-721d-41e7-b5a5-f70557e3ae39",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "69ea473c-95e1-4c8f-9ebf-e903929c08e4",
+                    "shopId": "0dfc4a9c-b568-4f77-8398-3ded6bf1502d",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "36e89076-99e1-4a97-9178-bd1213fb4776",
+                    "shopId": "5801db28-8b20-444e-aa7b-b760c0a30158",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "30e7327f-ccad-431b-b0b1-6b5cc1eab5fe",
+                    "shopId": "29d71ec5-2d90-45d1-997c-159ec8a6fe2c",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "e5c60a4e-4591-4466-84aa-4d3329c22751",
+                    "shopId": "700f9c64-490b-43ce-9a2f-38f777343c98",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "d44967d4-e728-490e-906f-6356e00e2563",
+                    "shopId": "6e913887-13aa-4c74-ba14-f7337be29b41",
+                    "productName": "Milk 1L",
+                    "shopName": "Local Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "de5035b8-a343-4826-aee8-4429c8317d93",
+                    "shopId": "a1b42aec-f373-4e97-b281-7ffa088d08f7",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "b06ebf1a-e60a-4b61-b165-6698f4a7ffe8",
+                    "shopId": "df8c8f7e-090a-4a19-ae19-255013aecf20",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "1a2b649b-6079-4941-989d-d59a4ccf5a13",
+                    "shopId": "2cf126f1-b822-4556-879f-5f131c5c1d9b",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "1bc796fc-5879-43c5-a49e-0ae5bd42669c",
+                    "shopId": "6991e95d-0577-459a-96d5-8ad17474eadd",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "76ea9d8d-23ad-4858-a826-262b0fcbe7b9",
+                    "shopId": "6bd7acc3-6797-4384-9b9d-d90424278640",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "57c576ac-429d-4a4d-8528-8a6b0466fbec",
+                    "shopId": "6e7409f1-d259-41cd-b3db-e38f00b7e26f",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "526c044a-0311-4ab0-9fd5-7f67801c5514",
+                    "shopId": "3e96a9db-a63f-4929-87f5-9111da6c98c4",
+                    "productName": "Milk 1L",
+                    "shopName": "Test Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "c5b8f31a-5da9-400c-a1cc-7ee68d63de79",
+                    "shopId": "5cd68b76-d56f-4cf0-b132-e9a98607e420",
+                    "productName": "Milk 1L",
+                    "shopName": "Verify Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "ae75cb0f-83ae-44f2-b20f-b55441ade0e2",
+                    "shopId": "e5688cde-9b06-46c6-b0c2-42d7c46232b3",
+                    "productName": "Milk 1L",
+                    "shopName": "City Mart",
+                    "category": "dairy",
+                    "price": 58,
+                    "distance": 566
+                  },
+                  {
+                    "productId": "c1af7128-f31b-4690-bb89-a5a2836c9a3c",
+                    "shopId": "a0a89bd9-9644-46f3-bca7-dfc94c898851",
+                    "productName": "Milk 1L",
+                    "shopName": "Quote Smoke Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 751
+                  },
+                  {
+                    "productId": "825fd2d7-4d3d-44c6-b574-e98697683779",
+                    "shopId": "9f834011-cbd9-4894-b1a2-bce647ec7474",
+                    "productName": "Milk 1L",
+                    "shopName": "Quote Smoke Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 751
+                  }
+                ]
+              },
+              "latencyMs": 23
+            }
+          },
+          {
+            "label": "nearby product search",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "items": [
+                  {
+                    "productId": "a1a72d22-dade-408a-8bfb-7dd18027bf49",
+                    "shopId": "8530cc0d-2c3a-4b67-8ca6-0f62ce439cd0",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "0fbe360e-8401-4910-b250-70f7b857993a",
+                    "shopId": "11176d60-721d-41e7-b5a5-f70557e3ae39",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "69ea473c-95e1-4c8f-9ebf-e903929c08e4",
+                    "shopId": "0dfc4a9c-b568-4f77-8398-3ded6bf1502d",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "36e89076-99e1-4a97-9178-bd1213fb4776",
+                    "shopId": "5801db28-8b20-444e-aa7b-b760c0a30158",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "30e7327f-ccad-431b-b0b1-6b5cc1eab5fe",
+                    "shopId": "29d71ec5-2d90-45d1-997c-159ec8a6fe2c",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "e5c60a4e-4591-4466-84aa-4d3329c22751",
+                    "shopId": "700f9c64-490b-43ce-9a2f-38f777343c98",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "d44967d4-e728-490e-906f-6356e00e2563",
+                    "shopId": "6e913887-13aa-4c74-ba14-f7337be29b41",
+                    "productName": "Milk 1L",
+                    "shopName": "Local Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "de5035b8-a343-4826-aee8-4429c8317d93",
+                    "shopId": "a1b42aec-f373-4e97-b281-7ffa088d08f7",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "b06ebf1a-e60a-4b61-b165-6698f4a7ffe8",
+                    "shopId": "df8c8f7e-090a-4a19-ae19-255013aecf20",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "1a2b649b-6079-4941-989d-d59a4ccf5a13",
+                    "shopId": "2cf126f1-b822-4556-879f-5f131c5c1d9b",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "1bc796fc-5879-43c5-a49e-0ae5bd42669c",
+                    "shopId": "6991e95d-0577-459a-96d5-8ad17474eadd",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "76ea9d8d-23ad-4858-a826-262b0fcbe7b9",
+                    "shopId": "6bd7acc3-6797-4384-9b9d-d90424278640",
+                    "productName": "Milk 1L",
+                    "shopName": "Phase3 Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "57c576ac-429d-4a4d-8528-8a6b0466fbec",
+                    "shopId": "6e7409f1-d259-41cd-b3db-e38f00b7e26f",
+                    "productName": "Milk 1L",
+                    "shopName": "Search Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "526c044a-0311-4ab0-9fd5-7f67801c5514",
+                    "shopId": "3e96a9db-a63f-4929-87f5-9111da6c98c4",
+                    "productName": "Milk 1L",
+                    "shopName": "Test Grocery",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "c5b8f31a-5da9-400c-a1cc-7ee68d63de79",
+                    "shopId": "5cd68b76-d56f-4cf0-b132-e9a98607e420",
+                    "productName": "Milk 1L",
+                    "shopName": "Verify Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 0
+                  },
+                  {
+                    "productId": "ae75cb0f-83ae-44f2-b20f-b55441ade0e2",
+                    "shopId": "e5688cde-9b06-46c6-b0c2-42d7c46232b3",
+                    "productName": "Milk 1L",
+                    "shopName": "City Mart",
+                    "category": "dairy",
+                    "price": 58,
+                    "distance": 566
+                  },
+                  {
+                    "productId": "c1af7128-f31b-4690-bb89-a5a2836c9a3c",
+                    "shopId": "a0a89bd9-9644-46f3-bca7-dfc94c898851",
+                    "productName": "Milk 1L",
+                    "shopName": "Quote Smoke Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 751
+                  },
+                  {
+                    "productId": "825fd2d7-4d3d-44c6-b574-e98697683779",
+                    "shopId": "9f834011-cbd9-4894-b1a2-bce647ec7474",
+                    "productName": "Milk 1L",
+                    "shopName": "Quote Smoke Shop",
+                    "category": "dairy",
+                    "price": 60,
+                    "distance": 751
+                  }
+                ]
+              },
+              "latencyMs": 7
+            }
+          },
+          {
+            "label": "nearby shop search",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "items": [
+                  {
+                    "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                    "name": "Verify Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": false,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "a1b42aec-f373-4e97-b281-7ffa088d08f7",
+                    "name": "Search Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "df8c8f7e-090a-4a19-ae19-255013aecf20",
+                    "name": "Phase3 Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "b600f686-88d1-44f6-b6f0-3a47e6cc377a",
+                    "name": "Smoke Test Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "6bd7acc3-6797-4384-9b9d-d90424278640",
+                    "name": "Phase3 Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "6e7409f1-d259-41cd-b3db-e38f00b7e26f",
+                    "name": "Search Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "14d81de4-52d4-4e97-8e28-50d9cefde99f",
+                    "name": "Smoke Test Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "5cd68b76-d56f-4cf0-b132-e9a98607e420",
+                    "name": "Verify Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": false,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "8530cc0d-2c3a-4b67-8ca6-0f62ce439cd0",
+                    "name": "Phase3 Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "11176d60-721d-41e7-b5a5-f70557e3ae39",
+                    "name": "Search Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "e3503fd2-0ea2-4b6a-a83b-95d25aefa7b5",
+                    "name": "Smoke Test Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "6e913887-13aa-4c74-ba14-f7337be29b41",
+                    "name": "Local Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "29d71ec5-2d90-45d1-997c-159ec8a6fe2c",
+                    "name": "Search Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "2cf126f1-b822-4556-879f-5f131c5c1d9b",
+                    "name": "Phase3 Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "ff962241-ba6e-4662-8a08-5ba33e0317ab",
+                    "name": "Smoke Test Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "0dfc4a9c-b568-4f77-8398-3ded6bf1502d",
+                    "name": "Phase3 Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "5801db28-8b20-444e-aa7b-b760c0a30158",
+                    "name": "Search Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "700f9c64-490b-43ce-9a2f-38f777343c98",
+                    "name": "Search Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "6991e95d-0577-459a-96d5-8ad17474eadd",
+                    "name": "Phase3 Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "2c6d4f11-f83b-4302-9fd3-b90d1a791c3c",
+                    "name": "Smoke Test Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "3e96a9db-a63f-4929-87f5-9111da6c98c4",
+                    "name": "Test Grocery",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "b0c68c75-be99-4292-b67d-713e140a8bef",
+                    "name": "Smoke Test Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 0
+                  },
+                  {
+                    "shopId": "addcbf54-caff-412a-8d1a-1ca85248308b",
+                    "name": "Verify Shop 2",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 113
+                  },
+                  {
+                    "shopId": "d8deebb3-afe6-4f18-b138-1183f6d1c6c2",
+                    "name": "Verify Shop 2",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 113
+                  },
+                  {
+                    "shopId": "e5688cde-9b06-46c6-b0c2-42d7c46232b3",
+                    "name": "City Mart",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 565
+                  },
+                  {
+                    "shopId": "a0a89bd9-9644-46f3-bca7-dfc94c898851",
+                    "name": "Quote Smoke Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 750
+                  },
+                  {
+                    "shopId": "b737e5e1-59e8-41b7-a8b4-77acf122f04b",
+                    "name": "Chat Smoke Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 750
+                  },
+                  {
+                    "shopId": "9f834011-cbd9-4894-b1a2-bce647ec7474",
+                    "name": "Quote Smoke Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 750
+                  },
+                  {
+                    "shopId": "1f1a19aa-4612-4188-8f38-d50154e77a81",
+                    "name": "Chat Smoke Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 750
+                  },
+                  {
+                    "shopId": "e522a850-852a-47d2-990a-3228be7adf0b",
+                    "name": "Chat Smoke Shop",
+                    "category": "grocery",
+                    "rating": 0,
+                    "isOpen": true,
+                    "acceptingOrders": true,
+                    "distance": 750
+                  }
+                ]
+              },
+              "latencyMs": 53
+            }
+          },
+          {
+            "label": "empty query handled",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "String must contain at least 1 character(s)"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "invalid coordinates rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Number must be less than or equal to 90"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "radius edge limits",
+            "ok": true,
+            "detail": {
+              "radiusMax": {
+                "status": 200,
+                "body": {
+                  "items": [
+                    {
+                      "productId": "a1a72d22-dade-408a-8bfb-7dd18027bf49",
+                      "shopId": "8530cc0d-2c3a-4b67-8ca6-0f62ce439cd0",
+                      "productName": "Milk 1L",
+                      "shopName": "Phase3 Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "0fbe360e-8401-4910-b250-70f7b857993a",
+                      "shopId": "11176d60-721d-41e7-b5a5-f70557e3ae39",
+                      "productName": "Milk 1L",
+                      "shopName": "Search Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "69ea473c-95e1-4c8f-9ebf-e903929c08e4",
+                      "shopId": "0dfc4a9c-b568-4f77-8398-3ded6bf1502d",
+                      "productName": "Milk 1L",
+                      "shopName": "Phase3 Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "36e89076-99e1-4a97-9178-bd1213fb4776",
+                      "shopId": "5801db28-8b20-444e-aa7b-b760c0a30158",
+                      "productName": "Milk 1L",
+                      "shopName": "Search Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "30e7327f-ccad-431b-b0b1-6b5cc1eab5fe",
+                      "shopId": "29d71ec5-2d90-45d1-997c-159ec8a6fe2c",
+                      "productName": "Milk 1L",
+                      "shopName": "Search Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "e5c60a4e-4591-4466-84aa-4d3329c22751",
+                      "shopId": "700f9c64-490b-43ce-9a2f-38f777343c98",
+                      "productName": "Milk 1L",
+                      "shopName": "Search Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "d44967d4-e728-490e-906f-6356e00e2563",
+                      "shopId": "6e913887-13aa-4c74-ba14-f7337be29b41",
+                      "productName": "Milk 1L",
+                      "shopName": "Local Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "de5035b8-a343-4826-aee8-4429c8317d93",
+                      "shopId": "a1b42aec-f373-4e97-b281-7ffa088d08f7",
+                      "productName": "Milk 1L",
+                      "shopName": "Search Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "b06ebf1a-e60a-4b61-b165-6698f4a7ffe8",
+                      "shopId": "df8c8f7e-090a-4a19-ae19-255013aecf20",
+                      "productName": "Milk 1L",
+                      "shopName": "Phase3 Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "1a2b649b-6079-4941-989d-d59a4ccf5a13",
+                      "shopId": "2cf126f1-b822-4556-879f-5f131c5c1d9b",
+                      "productName": "Milk 1L",
+                      "shopName": "Phase3 Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "1bc796fc-5879-43c5-a49e-0ae5bd42669c",
+                      "shopId": "6991e95d-0577-459a-96d5-8ad17474eadd",
+                      "productName": "Milk 1L",
+                      "shopName": "Phase3 Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "76ea9d8d-23ad-4858-a826-262b0fcbe7b9",
+                      "shopId": "6bd7acc3-6797-4384-9b9d-d90424278640",
+                      "productName": "Milk 1L",
+                      "shopName": "Phase3 Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "57c576ac-429d-4a4d-8528-8a6b0466fbec",
+                      "shopId": "6e7409f1-d259-41cd-b3db-e38f00b7e26f",
+                      "productName": "Milk 1L",
+                      "shopName": "Search Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "526c044a-0311-4ab0-9fd5-7f67801c5514",
+                      "shopId": "3e96a9db-a63f-4929-87f5-9111da6c98c4",
+                      "productName": "Milk 1L",
+                      "shopName": "Test Grocery",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "c5b8f31a-5da9-400c-a1cc-7ee68d63de79",
+                      "shopId": "5cd68b76-d56f-4cf0-b132-e9a98607e420",
+                      "productName": "Milk 1L",
+                      "shopName": "Verify Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 0
+                    },
+                    {
+                      "productId": "ae75cb0f-83ae-44f2-b20f-b55441ade0e2",
+                      "shopId": "e5688cde-9b06-46c6-b0c2-42d7c46232b3",
+                      "productName": "Milk 1L",
+                      "shopName": "City Mart",
+                      "category": "dairy",
+                      "price": 58,
+                      "distance": 566
+                    },
+                    {
+                      "productId": "c1af7128-f31b-4690-bb89-a5a2836c9a3c",
+                      "shopId": "a0a89bd9-9644-46f3-bca7-dfc94c898851",
+                      "productName": "Milk 1L",
+                      "shopName": "Quote Smoke Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 751
+                    },
+                    {
+                      "productId": "825fd2d7-4d3d-44c6-b574-e98697683779",
+                      "shopId": "9f834011-cbd9-4894-b1a2-bce647ec7474",
+                      "productName": "Milk 1L",
+                      "shopName": "Quote Smoke Shop",
+                      "category": "dairy",
+                      "price": 60,
+                      "distance": 751
+                    }
+                  ]
+                },
+                "latencyMs": 7
+              },
+              "radiusTooFar": {
+                "status": 400,
+                "body": {
+                  "error": "Number must be less than or equal to 50000"
+                },
+                "latencyMs": 3
+              }
+            }
+          },
+          {
+            "label": "OpenSearch index reachable",
+            "ok": true,
+            "detail": "{\"count\":18,\"_shards\":{\"total\":1,\"successful\":1,\"skipped\":0,\"failed\":0}}"
+          }
+        ]
+      },
+      "Chat": {
+        "pass": 6,
+        "fail": 0,
+        "checks": [
+          {
+            "label": "create conversation",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "id": "b768cd98-f0a5-4e0c-a016-8ff38c484a47",
+                "conversationId": "b768cd98-f0a5-4e0c-a016-8ff38c484a47",
+                "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "createdAt": "2026-03-16T14:21:25.131Z",
+                "updatedAt": "2026-03-16T14:21:25.131Z"
+              },
+              "latencyMs": 4
+            }
+          },
+          {
+            "label": "send message",
+            "ok": true,
+            "detail": {
+              "status": 201,
+              "body": {
+                "id": "8070bac6-840e-4e1b-a949-b44da44753f1",
+                "messageId": "8070bac6-840e-4e1b-a949-b44da44753f1",
+                "conversationId": "b768cd98-f0a5-4e0c-a016-8ff38c484a47",
+                "senderId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                "message": "Hello shop",
+                "createdAt": "2026-03-16T14:21:25.136Z"
+              },
+              "latencyMs": 4
+            }
+          },
+          {
+            "label": "retrieve messages",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "items": [
+                  {
+                    "id": "8070bac6-840e-4e1b-a949-b44da44753f1",
+                    "messageId": "8070bac6-840e-4e1b-a949-b44da44753f1",
+                    "conversationId": "b768cd98-f0a5-4e0c-a016-8ff38c484a47",
+                    "senderId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                    "message": "Hello shop",
+                    "createdAt": "2026-03-16T14:21:25.136Z"
+                  }
+                ]
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "unauthorized message rejected",
+            "ok": true,
+            "detail": {
+              "status": 403,
+              "body": {
+                "error": "You are not allowed in this conversation"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "invalid conversation rejected",
+            "ok": true,
+            "detail": {
+              "status": 404,
+              "body": {
+                "error": "Conversation not found"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "large payload rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "String must contain at most 4000 character(s)"
+              },
+              "latencyMs": 1
+            }
+          }
+        ]
+      },
+      "Quotes": {
+        "pass": 7,
+        "fail": 0,
+        "checks": [
+          {
+            "label": "shop creates quote",
+            "ok": true,
+            "detail": {
+              "status": 201,
+              "body": {
+                "quoteId": "cfd8fcea-fe63-492a-80fc-aca225acea1b",
+                "totalPrice": 55,
+                "status": "PENDING"
+              },
+              "latencyMs": 5
+            }
+          },
+          {
+            "label": "customer fetches quote",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "items": [
+                  {
+                    "quoteId": "cfd8fcea-fe63-492a-80fc-aca225acea1b",
+                    "status": "PENDING",
+                    "totalPrice": 55,
+                    "createdAt": "2026-03-16T14:21:25.150Z",
+                    "updatedAt": "2026-03-16T14:21:25.150Z",
+                    "items": [
+                      {
+                        "productName": "Milk 1L",
+                        "quantity": 1,
+                        "price": 55,
+                        "subtotal": 55
+                      }
+                    ]
+                  }
+                ]
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "invalid product in quote rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "One or more products are invalid for this shop"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "unauthorized accept rejected",
+            "ok": true,
+            "detail": {
+              "status": 403,
+              "body": {
+                "error": "Only customer of this conversation can accept quotes"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "customer accepts quote",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "orderId": "5e4c14b1-f5a2-4b54-a25e-3c0cab5805c9",
+                "status": "CREATED"
+              },
+              "latencyMs": 18
+            }
+          },
+          {
+            "label": "accept already accepted quote rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Only pending quotes can be accepted"
+              },
+              "latencyMs": 2
+            }
+          },
+          {
+            "label": "invalid quote rejected",
+            "ok": true,
+            "detail": {
+              "status": 404,
+              "body": {
+                "error": "Quote not found"
+              },
+              "latencyMs": 1
+            }
+          }
+        ]
+      },
+      "Orders": {
+        "pass": 2,
+        "fail": 1,
+        "checks": [
+          {
+            "label": "quote acceptance creates order with CREATED response",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "orderId": "5e4c14b1-f5a2-4b54-a25e-3c0cab5805c9",
+                "status": "CREATED"
+              },
+              "latencyMs": 18
+            }
+          },
+          {
+            "label": "driver lifecycle transitions",
+            "ok": true,
+            "detail": {
+              "pickup": {
+                "status": 200,
+                "body": {
+                  "orderId": "5e4c14b1-f5a2-4b54-a25e-3c0cab5805c9",
+                  "status": "PICKED_UP",
+                  "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                  "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                  "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                  "items": [
+                    {
+                      "productName": "Milk 1L",
+                      "quantity": 1,
+                      "unitPrice": 55,
+                      "subtotal": 55
+                    }
+                  ],
+                  "grandTotal": 55,
+                  "createdAt": "2026-03-16T14:21:25.858Z",
+                  "updatedAt": "2026-03-16T14:21:37.087Z"
+                },
+                "latencyMs": 12
+              },
+              "startDelivery": {
+                "status": 200,
+                "body": {
+                  "orderId": "5e4c14b1-f5a2-4b54-a25e-3c0cab5805c9",
+                  "status": "DELIVERING",
+                  "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                  "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                  "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                  "items": [
+                    {
+                      "productName": "Milk 1L",
+                      "quantity": 1,
+                      "unitPrice": 55,
+                      "subtotal": 55
+                    }
+                  ],
+                  "grandTotal": 55,
+                  "createdAt": "2026-03-16T14:21:25.858Z",
+                  "updatedAt": "2026-03-16T14:21:37.095Z"
+                },
+                "latencyMs": 6
+              },
+              "complete": {
+                "status": 200,
+                "body": {
+                  "orderId": "5e4c14b1-f5a2-4b54-a25e-3c0cab5805c9",
+                  "status": "DELIVERED",
+                  "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                  "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                  "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                  "items": [
+                    {
+                      "productName": "Milk 1L",
+                      "quantity": 1,
+                      "unitPrice": 55,
+                      "subtotal": 55
+                    }
+                  ],
+                  "grandTotal": 55,
+                  "createdAt": "2026-03-16T14:21:25.858Z",
+                  "updatedAt": "2026-03-16T14:21:37.100Z"
+                },
+                "latencyMs": 6
+              }
+            }
+          },
+          {
+            "label": "shop not accepting orders rejects checkout",
+            "ok": false,
+            "detail": {
+              "status": 200,
+              "body": {
+                "orderId": "8d2118e8-17c1-46fb-bceb-6df334e99cda",
+                "status": "CREATED"
+              },
+              "latencyMs": 7
+            }
+          }
+        ]
+      },
+      "Drivers": {
+        "pass": 4,
+        "fail": 0,
+        "checks": [
+          {
+            "label": "driver location update",
+            "ok": true,
+            "detail": {
+              "d1Loc": {
+                "status": 200,
+                "body": {
+                  "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                  "userId": "731ccc7c-b898-45f4-95c7-e8de7f4d79a8",
+                  "name": null,
+                  "phone": "7967088418",
+                  "vehicleType": "TWO_WHEELER",
+                  "vehicleNumber": "UNKNOWN",
+                  "isActive": true,
+                  "isOnline": true,
+                  "lat": 17.385,
+                  "lng": 78.4867,
+                  "createdAt": "2026-03-16T14:21:25.612Z",
+                  "updatedAt": "2026-03-16T14:21:25.612Z"
+                },
+                "latencyMs": 2
+              },
+              "d2Loc": {
+                "status": 200,
+                "body": {
+                  "driverId": "37bd12d9-b139-4e3e-9a1c-cadeed57378f",
+                  "userId": "8e21f568-5a34-41db-a57a-e69cf1887d53",
+                  "name": null,
+                  "phone": "7967088419",
+                  "vehicleType": "TWO_WHEELER",
+                  "vehicleNumber": "UNKNOWN",
+                  "isActive": true,
+                  "isOnline": true,
+                  "lat": 17.395,
+                  "lng": 78.4967,
+                  "createdAt": "2026-03-16T14:21:25.615Z",
+                  "updatedAt": "2026-03-16T14:21:25.615Z"
+                },
+                "latencyMs": 2
+              }
+            }
+          },
+          {
+            "label": "invalid driver coordinates rejected",
+            "ok": true,
+            "detail": {
+              "status": 400,
+              "body": {
+                "error": "Number must be less than or equal to 90"
+              },
+              "latencyMs": 1
+            }
+          },
+          {
+            "label": "driver persisted in Postgres",
+            "ok": true,
+            "detail": "76836f4d-da81-458a-871e-0a631f9e0dac,t,f,17.385,78.4867"
+          },
+          {
+            "label": "driver in Redis GEO index",
+            "ok": true,
+            "detail": ""
+          }
+        ]
+      },
+      "Dispatch": {
+        "pass": 8,
+        "fail": 2,
+        "checks": [
+          {
+            "label": "order auto-assigned",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "orderId": "5e4c14b1-f5a2-4b54-a25e-3c0cab5805c9",
+                "status": "ASSIGNED",
+                "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                "items": [
+                  {
+                    "productName": "Milk 1L",
+                    "quantity": 1,
+                    "unitPrice": 55,
+                    "subtotal": 55
+                  }
+                ],
+                "grandTotal": 55,
+                "createdAt": "2026-03-16T14:21:25.858Z",
+                "updatedAt": "2026-03-16T14:21:25.872Z"
+              },
+              "latencyMs": 5
+            }
+          },
+          {
+            "label": "nearest driver selected",
+            "ok": true,
+            "detail": {
+              "expected": "76836f4d-da81-458a-871e-0a631f9e0dac",
+              "actual": "76836f4d-da81-458a-871e-0a631f9e0dac"
+            }
+          },
+          {
+            "label": "busy lock set in Redis",
+            "ok": true,
+            "detail": {
+              "busyExists": "1",
+              "busyTtl": "-1"
+            }
+          },
+          {
+            "label": "busy lock has TTL",
+            "ok": false,
+            "detail": "-1"
+          },
+          {
+            "label": "driver busy persisted in Postgres",
+            "ok": true,
+            "detail": "t"
+          },
+          {
+            "label": "no drivers available keeps order unassigned",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "orderId": "0766379e-5854-4499-ab5a-82c8699623e3",
+                "status": "CREATED",
+                "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "driverId": null,
+                "items": [
+                  {
+                    "productName": "Milk 1L",
+                    "quantity": 1,
+                    "unitPrice": 56,
+                    "subtotal": 56
+                  }
+                ],
+                "grandTotal": 56,
+                "createdAt": "2026-03-16T14:21:26.690Z",
+                "updatedAt": "2026-03-16T14:21:26.690Z"
+              },
+              "latencyMs": 9
+            }
+          },
+          {
+            "label": "dispatch attempts counter created",
+            "ok": true,
+            "detail": ""
+          },
+          {
+            "label": "driver back online for retry",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                "userId": "731ccc7c-b898-45f4-95c7-e8de7f4d79a8",
+                "name": null,
+                "phone": "7967088418",
+                "vehicleType": "TWO_WHEELER",
+                "vehicleNumber": "UNKNOWN",
+                "isActive": true,
+                "isOnline": true,
+                "lat": 17.385,
+                "lng": 78.4867,
+                "createdAt": "2026-03-16T14:21:25.612Z",
+                "updatedAt": "2026-03-16T14:21:30.001Z"
+              },
+              "latencyMs": 5
+            }
+          },
+          {
+            "label": "retry logic eventually assigns",
+            "ok": true,
+            "detail": {
+              "status": 200,
+              "body": {
+                "orderId": "0766379e-5854-4499-ab5a-82c8699623e3",
+                "status": "ASSIGNED",
+                "customerId": "6df60292-f109-40e9-864c-6c0ab9385de9",
+                "shopId": "730c2a53-cfeb-4051-8d41-02db08e68645",
+                "driverId": "76836f4d-da81-458a-871e-0a631f9e0dac",
+                "items": [
+                  {
+                    "productName": "Milk 1L",
+                    "quantity": 1,
+                    "unitPrice": 56,
+                    "subtotal": 56
+                  }
+                ],
+                "grandTotal": 56,
+                "createdAt": "2026-03-16T14:21:26.690Z",
+                "updatedAt": "2026-03-16T14:21:36.707Z"
+              },
+              "latencyMs": 11
+            }
+          },
+          {
+            "label": "busy lock cleared on completion",
+            "ok": false,
+            "detail": {
+              "lockAfterComplete": "1",
+              "dbAfterComplete": "f"
+            }
+          }
+        ]
+      }
+    },
+    "infra": {
+      "health": {
+        "status": 200,
+        "body": {
+          "status": "ok",
+          "service": "api-gateway"
+        },
+        "latencyMs": 24
+      },
+      "docker": "NAMES                   STATUS\nhyperlocal-api          Up 41 minutes (healthy)\nhyperlocal-kafka        Up 6 hours\nhyperlocal-redis        Up 6 hours (healthy)\nhyperlocal-zookeeper    Up 6 hours\nhyperlocal-opensearch   Up 6 hours\nhyperlocal-postgres     Up 6 hours (healthy)\n"
+    },
+    "database": {
+      "tables": "conversations\ndrivers\nmessages\norders\nproducts\nquotes\nshops\nusers",
+      "foreignKeyCount": 51
+    },
+    "redis": {
+      "keys": {
+        "driversGeoExists": "0",
+        "dispatchQueueLen": "0",
+        "sampleBusyTtl": "-1"
+      }
+    },
+    "performance": {
+      "searchLatencyMs": 23,
+      "orderCreationLatencyMs": 18,
+      "dispatchLatencyMs": 206,
+      "dispatchSlaMet": true
+    },
+    "bugs": [
+      "Shop open/closed toggle is not supported via API contract (isOpen not writable).",
+      "Disable product endpoint is missing (PATCH /products/:id not implemented).",
+      "Order creation is allowed even when shop.accepting_orders is false."
+    ],
+    "warnings": []
+  }
+}

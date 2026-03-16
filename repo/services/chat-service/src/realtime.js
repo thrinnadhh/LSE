@@ -89,7 +89,6 @@ function setupChatRealtime({ server, db, redisUrl }) {
 
   server.on("upgrade", (request, socket, head) => {
     if (!request.url || !request.url.startsWith("/ws/chat")) {
-      socket.destroy();
       return;
     }
 

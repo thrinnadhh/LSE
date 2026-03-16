@@ -4,7 +4,7 @@ const chatService = require("./chat-service");
 const { requireAuth } = require("../../user-service/src/routes");
 const { ApiError, asyncHandler } = require("../../../apps/api-gateway/src/lib/errors");
 
-function createChatRouter({ db, onMessagePersisted }) {
+function createChatRouter({ db, onMessagePersisted, onOrderCreated }) {
   const router = express.Router();
 
   router.post(
@@ -114,6 +114,14 @@ function createChatRouter({ db, onMessagePersisted }) {
           auth: req.auth,
           db,
         });
+
+        if (onOrderCreated) {
+          try {
+            await onOrderCreated({ orderId: quote.orderId });
+          } catch (publishErr) {
+            console.error("failed to publish ORDER_CREATED", publishErr.message);
+          }
+        }
 
         res.status(200).json(quote);
       } catch (err) {
