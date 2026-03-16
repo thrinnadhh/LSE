@@ -83,6 +83,27 @@ function createShopRouter({ db }) {
     })
   );
 
+  router.patch(
+    "/:id/availability",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      try {
+        const updated = await shopService.patchAvailability({
+          id: req.params.id,
+          body: req.body,
+          auth: req.auth,
+          db,
+        });
+        res.status(200).json(updated);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          throw new ApiError(400, err.issues[0].message);
+        }
+        throw err;
+      }
+    })
+  );
+
   return router;
 }
 
