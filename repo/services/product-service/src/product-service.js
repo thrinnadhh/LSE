@@ -27,6 +27,7 @@ function mapProduct(row) {
 
   return {
     id: row.id,
+    productId: row.id,
     shopId: row.shop_id,
     name: row.name,
     description: row.description,
@@ -38,6 +39,7 @@ function mapProduct(row) {
     stockQuantity,
     reservedQuantity,
     availableQuantity,
+    available_quantity: availableQuantity,
     inStock: availableQuantity > 0,
   };
 }

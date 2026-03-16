@@ -1,4 +1,5 @@
 const express = require("express");
+const http = require("http");
 const { pool, ensureAuthTables } = require("./lib/db");
 const { redis } = require("./lib/redis");
 const { connectProducer } = require("./lib/kafka");
@@ -17,12 +18,17 @@ const { ensureProductTables } = require("../../../services/product-service/src/p
 const { createSearchRouter } = require("../../../services/search-service/src/routes");
 const { ensureProductsIndex } = require("../../../services/search-service/src/search-service");
 const { startSearchIndexer } = require("../../../services/search-service/src/search-indexer");
+const { ensureChatTables } = require("../../../services/chat-service/src/chat-service");
+const { createChatRouter } = require("../../../services/chat-service/src/routes");
+const { setupChatRealtime } = require("../../../services/chat-service/src/realtime");
 
 const app = express();
+const server = http.createServer(app);
 
 app.use(express.json());
 
 let kafkaProducer;
+let chatRealtime;
 
 app.get("/health", (_req, res) => {
   res.status(200).json({
@@ -35,9 +41,15 @@ async function start() {
   await ensureAuthTables();
   await ensureShopTables(pool);
   await ensureProductTables(pool);
+  await ensureChatTables(pool);
   await ensureProductsIndex();
   kafkaProducer = await connectProducer();
   await startSearchIndexer({ db: pool });
+  chatRealtime = setupChatRealtime({
+    server,
+    db: pool,
+    redisUrl: config.redisUrl,
+  });
 
   app.use("/auth", createAuthRouter({ redis, db: pool }));
   app.use("/users", createUserRouter({ db: pool }));
@@ -46,9 +58,16 @@ async function start() {
   app.use("/products", createProductRouter({ db: pool, producer: kafkaProducer }));
   app.use("/inventory", createInventoryRouter({ db: pool }));
   app.use("/search", createSearchRouter());
+  app.use(
+    "/",
+    createChatRouter({
+      db: pool,
+      onMessagePersisted: chatRealtime.publishChatMessage,
+    })
+  );
   app.use(errorHandler);
 
-  app.listen(config.port, () => {
+  server.listen(config.port, () => {
     console.log(`api-gateway listening on port ${config.port}`);
   });
 }
