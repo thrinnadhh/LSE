@@ -6,12 +6,15 @@
     "start:api": "node repo/apps/api-gateway/src/server.js",
     "start:tracking": "node repo/services/tracking-service/src/server.js",
     "test:phase10": "node repo/services/tracking-service/src/phase10-smoke-test.js",
+    "test:phase12-hardening": "node repo/services/user-service/src/phase12-hardening-smoke-test.js",
+    "test:shop-first-e2e": "node tmp-shop-first-e2e-suite.js",
     "docker:up": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml up -d",
     "docker:down": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml down",
     "docker:reset": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml down -v && docker compose -f artifacts/infra/docker/docker-compose.dev.yml up -d"
   },
   "dependencies": {
     "express": "^4.21.2",
+    "kafkajs": "^2.2.4",
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",

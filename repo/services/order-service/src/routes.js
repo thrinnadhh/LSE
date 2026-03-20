@@ -4,7 +4,7 @@ const orderService = require("./order-service");
 const { requireAuth } = require("../../user-service/src/routes");
 const { ApiError, asyncHandler } = require("../../../apps/api-gateway/src/lib/errors");
 
-function createOrderRouter({ db, redis }) {
+function createOrderRouter({ db, redis, kafkaProducer }) {
   const router = express.Router();
 
   router.get(
@@ -31,6 +31,7 @@ function createOrderRouter({ db, redis }) {
           auth: req.auth,
           db,
           redis,
+          kafkaProducer,
         });
         res.status(200).json(payload);
       } catch (err) {
@@ -51,6 +52,7 @@ function createOrderRouter({ db, redis }) {
         auth: req.auth,
         db,
         redis,
+        kafkaProducer,
         fromStatus: "CREATED",
         toStatus: "CONFIRMED",
         actor: "shop",
@@ -68,6 +70,7 @@ function createOrderRouter({ db, redis }) {
         auth: req.auth,
         db,
         redis,
+        kafkaProducer,
         fromStatus: "ASSIGNED",
         toStatus: "PICKED_UP",
         actor: "driver",
@@ -85,6 +88,7 @@ function createOrderRouter({ db, redis }) {
         auth: req.auth,
         db,
         redis,
+        kafkaProducer,
         fromStatus: "PICKED_UP",
         toStatus: "DELIVERING",
         actor: "driver",
@@ -102,32 +106,12 @@ function createOrderRouter({ db, redis }) {
         auth: req.auth,
         db,
         redis,
+        kafkaProducer,
         fromStatus: "DELIVERING",
         toStatus: "DELIVERED",
         actor: "driver",
       });
       res.status(200).json(payload);
-    })
-  );
-
-  router.post(
-    "/drivers/location",
-    requireAuth,
-    asyncHandler(async (req, res) => {
-      try {
-        const payload = await orderService.upsertDriverLocation({
-          body: req.body,
-          auth: req.auth,
-          db,
-          redis,
-        });
-        res.status(200).json(payload);
-      } catch (err) {
-        if (err instanceof z.ZodError) {
-          throw new ApiError(400, err.issues[0].message);
-        }
-        throw err;
-      }
     })
   );
 

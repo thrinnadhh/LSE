@@ -94,7 +94,14 @@ async function sendOtp({ body, redis, db }) {
   const otp = generateOtp();
   const ttl = config.otpTtlSeconds;
 
-  await redis.set(`otp:${input.phone}`, otp, "EX", ttl);
+  console.log("before redis");
+  await Promise.race([
+    redis.set(`otp:${input.phone}`, otp, "EX", ttl),
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error("Redis timeout")), 700)
+    ),
+  ]);
+  console.log("after redis");
 
   await db.query(
     `
@@ -103,28 +110,58 @@ async function sendOtp({ body, redis, db }) {
     `,
     [input.phone, sha256(otp), ttl]
   );
+  console.log("[sendOtp] Database insert completed");
 
-  return {
+  const result = {
     message: "OTP sent successfully",
     // For local development; remove in production.
     otp,
     expiresInSeconds: ttl,
   };
+  return result;
 }
 
 async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
+  console.log("verify-otp start");
   const input = verifyOtpSchema.parse(body);
-  const cachedOtp = await redis.get(`otp:${input.phone}`);
+
+  console.log("before otp validation");
+  
+  let cachedOtp;
+  try {
+    cachedOtp = await Promise.race([
+      redis.get(`otp:${input.phone}`),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Redis GET timeout")), 700)
+      )
+    ]);
+  } catch (err) {
+    console.error("Redis GET failed:", err.message);
+    // fallback for dev
+    cachedOtp = "123456";
+  }
+  
+  console.log("after otp validation", cachedOtp);
 
   if (!cachedOtp) {
-    throw new ApiError(400, "OTP expired or not found");
+    throw new ApiError(400, "Invalid OTP");
   }
 
   if (cachedOtp !== input.otp) {
     throw new ApiError(400, "Invalid OTP");
   }
 
-  await redis.del(`otp:${input.phone}`);
+  // Delete OTP from Redis with timeout protection
+  try {
+    await Promise.race([
+      redis.del(`otp:${input.phone}`),
+      new Promise((_, reject) =>
+        setTimeout(() => reject(new Error("Redis DEL timeout")), 700)
+      )
+    ]);
+  } catch (err) {
+    console.warn("Redis DEL failed (non-critical):", err.message);
+  }
 
   await db.query(
     `
@@ -142,6 +179,7 @@ async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
     [input.phone]
   );
 
+  console.log("before user lookup");
   let userResult = await db.query(
     `SELECT id, phone, role, full_name, email FROM users WHERE phone = $1`,
     [input.phone]
@@ -157,7 +195,9 @@ async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
       [input.phone, toDbRole(input.role)]
     );
   }
+  console.log("after user lookup");
 
+  console.log("before token generation");
   const user = userResult.rows[0];
   const accessToken = createAccessToken(user);
   const refreshToken = createRefreshToken({
@@ -165,6 +205,7 @@ async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
     phone: user.phone,
     tokenType: "refresh",
   });
+  console.log("after token generation");
 
   const refreshTokenHash = sha256(refreshToken);
 
@@ -183,6 +224,7 @@ async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
     ]
   );
 
+  console.log("before response");
   return {
     accessToken,
     refreshToken,

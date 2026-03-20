@@ -2,8 +2,12 @@ const Redis = require("ioredis");
 const { config } = require("./config");
 
 const redis = new Redis(config.redisUrl, {
-  maxRetriesPerRequest: 2,
-  enableOfflineQueue: true,
+  maxRetriesPerRequest: 0,
+  connectTimeout: 2000,
+  commandTimeout: 5000,
+  lazyConnect: false,
+  enableOfflineQueue: false,
+  retryStrategy: () => null,
 });
 
 redis.on("error", (err) => {

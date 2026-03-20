@@ -43,4 +43,47 @@ async function ensureAuthTables() {
   `);
 }
 
-module.exports = { pool, ensureAuthTables };
+async function ensureTrackingTables() {
+  // User events table for behavior tracking
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_events (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event_type VARCHAR(50) NOT NULL,
+      entity_id UUID,
+      metadata JSONB,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_events_user_id
+    ON user_events(user_id, created_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_events_type
+    ON user_events(event_type, created_at DESC);
+  `);
+
+  // Notifications table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      title TEXT NOT NULL,
+      body TEXT,
+      is_read BOOLEAN DEFAULT FALSE,
+      related_entity_id UUID,
+      entity_type VARCHAR(50),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+    ON notifications(user_id, is_read, created_at DESC);
+  `);
+}
+
+module.exports = { pool, ensureAuthTables, ensureTrackingTables };

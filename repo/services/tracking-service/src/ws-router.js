@@ -1,7 +1,7 @@
 const { WebSocket } = require("ws");
 const { z } = require("zod");
 const { authenticateToken } = require("./auth");
-const { calculateEtaSeconds, DEFAULT_SPEED_KMH } = require("./eta");
+const { calculateEtaSeconds, calculateDistanceKm, DEFAULT_SPEED_KMH } = require("./eta");
 const { authorizeOrderSubscription } = require("./subscriptions");
 
 const authSchema = z.object({
@@ -112,10 +112,12 @@ async function handleDriverLocation({ ws, payload, db, publisher, store }) {
   });
 
   if (etaSeconds !== null) {
+    const distanceRemaining = calculateDistanceKm(payload.lat, payload.lng, ctx.deliveryLat, ctx.deliveryLng);
     broadcast(store.subscribersForOrder(payload.orderId), {
       type: "ETA_UPDATE",
       orderId: payload.orderId,
       etaSeconds,
+      distanceRemaining: distanceRemaining !== null ? Number(distanceRemaining.toFixed(2)) : null,
       timestamp: updatedAt,
     });
   }

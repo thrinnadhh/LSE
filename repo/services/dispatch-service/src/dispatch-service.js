@@ -148,7 +148,7 @@ async function dispatchOrderCreated({ orderId }) {
   await activeDispatcher.enqueue(orderId);
 }
 
-async function startDispatchConsumer({ db, redis }) {
+async function startDispatchConsumer({ db, redis, kafkaProducer }) {
   const consumer = createConsumer({ groupId: "dispatch-service" });
   let isWorkerRunning = true;
 
@@ -180,6 +180,7 @@ async function startDispatchConsumer({ db, redis }) {
         driverId,
         db,
         redis,
+        kafkaProducer,
         requireAvailable: true,
       });
       await clearDispatchAttempts({ redis, orderId });

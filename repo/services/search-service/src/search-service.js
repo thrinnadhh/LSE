@@ -10,6 +10,32 @@ const searchProductsSchema = z.object({
   radius: z.coerce.number().positive().max(50000),
 });
 
+const searchShopsSchema = z.object({
+  q: z.string().trim().min(1),
+  lat: z.coerce.number().min(-90).max(90),
+  lng: z.coerce.number().min(-180).max(180),
+  radius: z.coerce.number().positive().max(50000).default(5000),
+});
+
+function computeRankingScore({ baseScore, isFavorite, repeatOrderCount }) {
+  let score = Number(baseScore || 0);
+
+  if (isFavorite) {
+    score += 100;
+  }
+
+  score += Number(repeatOrderCount || 0) * 10;
+  return score;
+}
+
+function getDeliveryTag(distanceMeters) {
+  if (!distanceMeters) return "Nearby";
+
+  if (distanceMeters <= 2000) return "Within 2 km";
+  if (distanceMeters <= 5000) return "Within 5 km";
+  return "Nearby";
+}
+
 async function ensureProductsIndex() {
   try {
     await openSearchRequest(`/${PRODUCTS_INDEX}`, {
@@ -146,12 +172,164 @@ async function searchProducts({ query }) {
     shopName: hit._source.shop_name,
     category: hit._source.category,
     price: hit._source.price,
-    distance: hit.sort ? Math.round(hit.sort[0]) : null,
   }));
+}
+
+async function searchShops({ query, db, userId = null }) {
+  const input = searchShopsSchema.parse(query);
+  const radiusInKm = input.radius / 1000;
+
+  // Track search event for personalization
+  if (userId) {
+    try {
+      const trackingService = require("../../tracking-service/src/tracking-service");
+      trackingService.trackEvent(db, userId, "SEARCH", null, { query: input.q });
+    } catch (err) {
+      console.error("[search] Failed to track search event:", err.message);
+    }
+  }
+
+  const response = await openSearchRequest(`/${PRODUCTS_INDEX}/_search`, {
+    method: "POST",
+    body: {
+      size: 120,
+      _source: ["shop_id", "product_name", "shop_name"],
+      query: {
+        bool: {
+          must: {
+            multi_match: {
+              query: input.q,
+              fields: ["product_name^3", "shop_name"],
+            },
+          },
+          filter: {
+            geo_distance: {
+              distance: `${radiusInKm}km`,
+              location: {
+                lat: input.lat,
+                lon: input.lng,
+              },
+            },
+          },
+        },
+      },
+    },
+  });
+
+  const hits = response.hits?.hits || [];
+  if (hits.length === 0) {
+    return [];
+  }
+
+  const shopMatches = new Map();
+  for (const hit of hits) {
+    const source = hit._source || {};
+    const shopId = source.shop_id;
+    if (!shopId) {
+      continue;
+    }
+
+    if (!shopMatches.has(shopId)) {
+      shopMatches.set(shopId, {
+        shopId,
+        matchedProducts: new Set(),
+        baseScore: Number(hit._score || 0),
+      });
+    }
+
+    const entry = shopMatches.get(shopId);
+    if (source.product_name) {
+      entry.matchedProducts.add(source.product_name);
+    }
+    entry.baseScore = Math.max(entry.baseScore, Number(hit._score || 0));
+  }
+
+  const shopIds = Array.from(shopMatches.keys());
+  const shopRows = await db.query(
+    `
+      SELECT
+        s.id,
+        s.name,
+        COALESCE(s.rating_avg, 0) AS rating,
+        ST_Distance(
+          COALESCE(sl.location, s.location),
+          ST_SetSRID(ST_Point($2, $1), 4326)::geography
+        ) AS distance_meters
+      FROM shops s
+      LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+      WHERE s.id = ANY($3::uuid[])
+        AND COALESCE(s.is_active, TRUE) = TRUE
+    `,
+    [input.lat, input.lng, shopIds]
+  );
+
+  const shopById = new Map(shopRows.rows.map((row) => [row.id, row]));
+
+  let favoriteSet = new Set();
+  let repeatMap = new Map();
+
+  if (userId) {
+    const [favoritesResult, repeatsResult] = await Promise.all([
+      db.query(
+        `
+          SELECT shop_id
+          FROM favorite_shops
+          WHERE user_id = $1
+            AND shop_id = ANY($2::uuid[])
+        `,
+        [userId, shopIds]
+      ),
+      db.query(
+        `
+          SELECT shop_id, order_count
+          FROM shop_customer_stats
+          WHERE user_id = $1
+            AND shop_id = ANY($2::uuid[])
+        `,
+        [userId, shopIds]
+      ),
+    ]);
+
+    favoriteSet = new Set(favoritesResult.rows.map((row) => row.shop_id));
+    repeatMap = new Map(repeatsResult.rows.map((row) => [row.shop_id, Number(row.order_count)]));
+  }
+
+  return shopIds
+    .map((shopId) => {
+      const shop = shopById.get(shopId);
+      if (!shop) {
+        return null;
+      }
+
+      const matchedProducts = Array.from(shopMatches.get(shopId).matchedProducts).slice(0, 5);
+      const distance = Math.round(Number(shop.distance_meters || 0));
+      const isFavorite = favoriteSet.has(shopId);
+      const repeatOrderCount = repeatMap.get(shopId) || 0;
+      const baseScore = shopMatches.get(shopId).baseScore || 0;
+      const score = computeRankingScore({
+        baseScore,
+        isFavorite,
+        repeatOrderCount,
+      });
+
+      return {
+        shopId,
+        name: shop.name,
+        rating: Number(shop.rating || 0),
+        matchedProducts,
+        score,
+        deliveryTag: getDeliveryTag(distance),
+        _distanceForTieBreak: distance,
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => b.score - a.score || a._distanceForTieBreak - b._distanceForTieBreak)
+    .map(({ score: _score, _distanceForTieBreak: _internalDistance, ...item }) => item);
 }
 
 module.exports = {
   ensureProductsIndex,
   indexProductDocument,
   searchProducts,
+  searchShops,
 };

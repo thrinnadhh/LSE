@@ -59,8 +59,8 @@ services:
     container_name: hyperlocal-opensearch
     environment:
       discovery.type: single-node
-      DISABLE_SECURITY_PLUGIN: "true"
-      DISABLE_INSTALL_DEMO_CONFIG: "true"
+      plugins.security.disabled: "true"
+      OPENSEARCH_INITIAL_ADMIN_PASSWORD: ${OPENSEARCH_INITIAL_ADMIN_PASSWORD:-DevOnly123!ChangeMe}
       OPENSEARCH_JAVA_OPTS: -Xms512m -Xmx512m
     ports:
       - "${OPENSEARCH_PORT:-9200}:9200"

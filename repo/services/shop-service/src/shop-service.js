@@ -1,10 +1,22 @@
 const { z } = require("zod");
 const { ApiError } = require("../../../apps/api-gateway/src/lib/errors");
 
+const SHOP_CATEGORIES = [
+  "grocery",
+  "pet_store",
+  "electronics",
+  "furniture",
+  "salon",
+  "doctor",
+  "restaurant",
+];
+
+const shopCategorySchema = z.enum(SHOP_CATEGORIES);
+
 const createShopSchema = z.object({
   name: z.string().trim().min(2).max(180),
   description: z.string().trim().max(2000).optional(),
-  category: z.string().trim().max(80).optional(),
+  category: shopCategorySchema.optional(),
   phone: z.string().trim().regex(/^\+?[0-9]{10,15}$/),
   lat: z.number().min(-90).max(90),
   lng: z.number().min(-180).max(180),
@@ -14,7 +26,7 @@ const updateShopSchema = z
   .object({
     name: z.string().trim().min(2).max(180).optional(),
     description: z.string().trim().max(2000).nullable().optional(),
-    category: z.string().trim().max(80).nullable().optional(),
+    category: shopCategorySchema.nullable().optional(),
     phone: z.string().trim().regex(/^\+?[0-9]{10,15}$/).optional(),
     lat: z.number().min(-90).max(90).optional(),
     lng: z.number().min(-180).max(180).optional(),
@@ -40,10 +52,39 @@ const shopDetailsQuerySchema = z
   });
 
 async function ensureShopTables(db) {
+  await db.query(`
+    DO $$
+    BEGIN
+      IF NOT EXISTS (SELECT 1 FROM pg_type WHERE typname = 'shop_category') THEN
+        CREATE TYPE shop_category AS ENUM (
+          'grocery',
+          'pet_store',
+          'electronics',
+          'furniture',
+          'salon',
+          'doctor',
+          'restaurant'
+        );
+      END IF;
+    END $$;
+  `);
+
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS owner_id UUID REFERENCES users(id);`);
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_active BOOLEAN DEFAULT TRUE;`);
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS is_open BOOLEAN DEFAULT TRUE;`);
   await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS accepting_orders BOOLEAN DEFAULT TRUE;`);
+  await db.query(`ALTER TABLE shops ADD COLUMN IF NOT EXISTS category TEXT;`);
+
+  await db.query(`
+    ALTER TABLE shops
+    ALTER COLUMN category TYPE shop_category
+    USING CASE
+      WHEN category IS NULL THEN NULL
+      WHEN category::text IN ('grocery', 'pet_store', 'electronics', 'furniture', 'salon', 'doctor', 'restaurant')
+        THEN category::shop_category
+      ELSE NULL
+    END;
+  `);
 
   await db.query(`
     CREATE TABLE IF NOT EXISTS shop_locations (

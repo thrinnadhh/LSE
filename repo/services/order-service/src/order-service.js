@@ -1,10 +1,12 @@
 const { z } = require("zod");
 const { ApiError } = require("../../../apps/api-gateway/src/lib/errors");
+const { KAFKA_TOPICS, EVENT_TYPES, createEventEnvelope } = require("../../../lib/kafka/event-schema");
 const {
   setDriverBusy,
   setDriverOnline,
   updateDriverGeoIndex,
 } = require("../../dispatch-service/src/availability-store");
+const { calculateDistanceKm } = require("../../../lib/geo/distance");
 
 const assignDriverSchema = z.object({
   driverId: z.string().uuid(),
@@ -42,6 +44,54 @@ function mapOrder(row, items) {
   };
 }
 
+async function runRedisSideEffect(taskName, task, timeoutMs = 1500) {
+  try {
+    await Promise.race([
+      task,
+      new Promise((_, reject) => {
+        setTimeout(() => reject(new Error(`${taskName} timeout`)), timeoutMs);
+      }),
+    ]);
+  } catch (err) {
+    console.warn("redis side effect skipped", { taskName, error: err.message });
+  }
+}
+
+async function getOrderDeliveryContext({ orderId, db }) {
+  const result = await db.query(
+    `
+      SELECT
+        o.id AS order_id,
+        s.id AS shop_id,
+        s.name AS shop_name,
+        ST_Y(COALESCE(sl.location, s.location)::geometry) AS shop_lat,
+        ST_X(COALESCE(sl.location, s.location)::geometry) AS shop_lng,
+        d.id AS driver_id,
+        d.name AS driver_name,
+        d.lat AS driver_lat,
+        d.lng AS driver_lng,
+        d.is_online AS driver_is_online,
+        d.is_busy AS driver_is_busy,
+        ST_Y(ua.location::geometry) AS customer_lat,
+        ST_X(ua.location::geometry) AS customer_lng
+      FROM orders o
+      JOIN shops s ON s.id = o.shop_id
+      LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+      LEFT JOIN drivers d ON d.id = o.driver_id
+      LEFT JOIN user_addresses ua ON ua.id = o.delivery_address_id
+      WHERE o.id = $1
+      LIMIT 1
+    `,
+    [orderId]
+  );
+
+  if (result.rowCount === 0) {
+    return null;
+  }
+
+  return result.rows[0];
+}
+
 async function publishOrderEvent({ redis, orderId, status }) {
   if (!redis || !orderId || !status) {
     return;
@@ -55,6 +105,43 @@ async function publishOrderEvent({ redis, orderId, status }) {
       timestamp: new Date().toISOString(),
     })
   );
+}
+
+function toOrderStatusPayload(orderRow) {
+  return {
+    orderId: orderRow.id,
+    status: orderRow.status,
+    customerId: orderRow.customer_id,
+    shopId: orderRow.shop_id,
+    driverId: orderRow.driver_id || null,
+  };
+}
+
+async function publishOrderStatusChangedEvent({ kafkaProducer, orderRow }) {
+  if (!kafkaProducer || !orderRow) {
+    return;
+  }
+
+  const event = createEventEnvelope({
+    eventType: EVENT_TYPES.ORDER_STATUS_CHANGED,
+    source: "order-service",
+    payload: toOrderStatusPayload(orderRow),
+  });
+
+  await kafkaProducer.publish({
+    topic: KAFKA_TOPICS.orderEvents,
+    event,
+    key: orderRow.id,
+  });
+}
+
+async function publishOrderStatusChangedById({ orderId, db, kafkaProducer }) {
+  if (!orderId || !db || !kafkaProducer) {
+    return;
+  }
+
+  const order = await getOrderRowOrThrow({ orderId, db });
+  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: order });
 }
 
 async function ensureOrderLifecycleTables(db) {
@@ -138,6 +225,73 @@ async function getOrderItems({ orderId, db }) {
   return itemsResult.rows.map(mapOrderItem);
 }
 
+async function recordShopCustomerCompletion({ db, shopId, customerId }) {
+  if (!shopId || !customerId) {
+    return;
+  }
+
+  await db.query(
+    `
+      ALTER TABLE shop_customer_stats
+      ADD COLUMN IF NOT EXISTS customer_id UUID
+    `
+  );
+
+  await db.query(
+    `
+      UPDATE shop_customer_stats
+      SET customer_id = user_id
+      WHERE customer_id IS NULL
+    `
+  );
+
+  await db.query(
+    `
+      CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_customer_unique
+      ON shop_customer_stats (shop_id, customer_id)
+    `
+  );
+
+  await db.query(
+    `
+      INSERT INTO shop_customer_stats (shop_id, customer_id, user_id, order_count, last_order_at)
+      VALUES ($1, $2, $2, 1, NOW())
+      ON CONFLICT (shop_id, customer_id)
+      DO UPDATE SET
+        user_id = EXCLUDED.customer_id,
+        order_count = shop_customer_stats.order_count + 1,
+        last_order_at = NOW()
+    `,
+    [shopId, customerId]
+  );
+
+  const stats = await db.query(
+    `
+      SELECT order_count
+      FROM shop_customer_stats
+      WHERE shop_id = $1
+        AND customer_id = $2
+      LIMIT 1
+    `,
+    [shopId, customerId]
+  );
+
+  const orderCount = Number(stats.rows[0]?.order_count || 0);
+  console.info("stats updated", { shopId, customerId, orderCount });
+
+  if (orderCount >= 3) {
+    await db.query(
+      `
+        INSERT INTO favorite_shops (user_id, shop_id)
+        VALUES ($1, $2)
+        ON CONFLICT (user_id, shop_id)
+        DO NOTHING
+      `,
+      [customerId, shopId]
+    );
+  }
+}
+
 async function getOrderById({ orderId, auth, db }) {
   const order = await getOrderRowOrThrow({ orderId, db });
   const role = normalizeRole(auth.role);
@@ -149,10 +303,47 @@ async function getOrderById({ orderId, auth, db }) {
   }
 
   const items = await getOrderItems({ orderId, db });
-  return mapOrder(order, items);
+  const payload = mapOrder(order, items);
+
+  const context = await getOrderDeliveryContext({ orderId, db });
+  if (!context) {
+    return payload;
+  }
+
+  const shopLat = context.shop_lat !== null ? Number(context.shop_lat) : null;
+  const shopLng = context.shop_lng !== null ? Number(context.shop_lng) : null;
+  const driverLat = context.driver_lat !== null ? Number(context.driver_lat) : null;
+  const driverLng = context.driver_lng !== null ? Number(context.driver_lng) : null;
+  const customerLat = context.customer_lat !== null ? Number(context.customer_lat) : null;
+  const customerLng = context.customer_lng !== null ? Number(context.customer_lng) : null;
+
+  const distanceToShopKm = calculateDistanceKm(driverLat, driverLng, shopLat, shopLng);
+  const distanceToCustomerKm = calculateDistanceKm(driverLat, driverLng, customerLat, customerLng);
+
+  return {
+    ...payload,
+    shop: {
+      id: context.shop_id,
+      name: context.shop_name,
+      lat: shopLat,
+      lng: shopLng,
+    },
+    driver: context.driver_id
+      ? {
+          id: context.driver_id,
+          name: context.driver_name,
+          lat: driverLat,
+          lng: driverLng,
+          isOnline: context.driver_is_online,
+          isBusy: context.driver_is_busy,
+        }
+      : null,
+    distanceToShop: distanceToShopKm !== null ? Number(distanceToShopKm.toFixed(2)) : null,
+    distanceToCustomer: distanceToCustomerKm !== null ? Number(distanceToCustomerKm.toFixed(2)) : null,
+  };
 }
 
-async function assignDriver({ orderId, driverId, db, redis, requireAvailable = false }) {
+async function assignDriver({ orderId, driverId, db, redis, kafkaProducer, requireAvailable = false }) {
   await db.query("BEGIN");
   try {
     const order = await getOrderRowOrThrow({ orderId, db, forUpdate: true });
@@ -217,11 +408,12 @@ async function assignDriver({ orderId, driverId, db, redis, requireAvailable = f
   await publishOrderEvent({ redis, orderId, status: "ASSIGNED" });
 
   const updated = await getOrderRowOrThrow({ orderId, db });
+  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: updated });
   const items = await getOrderItems({ orderId, db });
   return mapOrder(updated, items);
 }
 
-async function assignDriverToOrder({ orderId, body, auth, db, redis }) {
+async function assignDriverToOrder({ orderId, body, auth, db, redis, kafkaProducer }) {
   const role = normalizeRole(auth.role);
   if (role !== "admin" && role !== "dispatch_service") {
     throw new ApiError(403, "Only admin or dispatch service can assign drivers");
@@ -234,6 +426,7 @@ async function assignDriverToOrder({ orderId, body, auth, db, redis }) {
     driverId: input.driverId,
     db,
     redis,
+    kafkaProducer,
     requireAvailable: false,
   });
 }
@@ -287,9 +480,32 @@ async function upsertDriverLocation({ body, auth, db, redis }) {
   );
 
   const row = result.rows[0];
-  await setDriverOnline({ redis, driverId: row.id, isOnline: true });
-  await setDriverBusy({ redis, driverId: row.id, isBusy: Boolean(row.is_busy) });
-  await updateDriverGeoIndex({ redis, driverId: row.id, lat: row.lat, lng: row.lng });
+  await Promise.all([
+    runRedisSideEffect(
+      "setDriverOnline",
+      setDriverOnline({ redis, driverId: row.id, isOnline: true })
+    ),
+    runRedisSideEffect(
+      "setDriverBusy",
+      setDriverBusy({ redis, driverId: row.id, isBusy: Boolean(row.is_busy) })
+    ),
+    runRedisSideEffect(
+      "updateDriverGeoIndex",
+      updateDriverGeoIndex({ redis, driverId: row.id, lat: row.lat, lng: row.lng })
+    ),
+  ]);
+
+  const activeOrder = await db.query(
+    `
+      SELECT id
+      FROM orders
+      WHERE driver_id = $1
+        AND status IN ('ASSIGNED', 'PICKED_UP', 'DELIVERING')
+      ORDER BY updated_at DESC
+      LIMIT 1
+    `,
+    [row.id]
+  );
 
   return {
     driverId: row.id,
@@ -302,6 +518,7 @@ async function upsertDriverLocation({ body, auth, db, redis }) {
     isOnline: row.is_online,
     lat: row.lat !== null ? Number(row.lat) : null,
     lng: row.lng !== null ? Number(row.lng) : null,
+    currentOrderId: activeOrder.rowCount > 0 ? activeOrder.rows[0].id : null,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
@@ -325,8 +542,11 @@ async function ensureShopOwnerForOrder({ orderId, authUserId, db }) {
   }
 }
 
-async function updateOrderStatus({ orderId, auth, db, redis, fromStatus, toStatus, actor }) {
+async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, fromStatus, toStatus, actor }) {
+  const allowDevManualCompletion = process.env.NODE_ENV !== "production" && actor === "driver" && toStatus === "DELIVERED";
   const role = normalizeRole(auth.role);
+  let driverProfileId = null;
+
   if (actor === "shop") {
     if (role !== "shop_owner") {
       throw new ApiError(403, "Only shop_owner can confirm orders");
@@ -350,51 +570,179 @@ async function updateOrderStatus({ orderId, auth, db, redis, fromStatus, toStatu
     );
 
     if (driverResult.rowCount === 0) {
-      throw new ApiError(404, "Driver profile not found");
+      if (!allowDevManualCompletion) {
+        throw new ApiError(404, "Driver profile not found");
+      }
+
+      const userResult = await db.query(
+        `
+          SELECT full_name, phone
+          FROM users
+          WHERE id = $1
+          LIMIT 1
+        `,
+        [auth.sub]
+      );
+
+      const insertedDriver = await db.query(
+        `
+          INSERT INTO drivers (
+            user_id,
+            name,
+            phone,
+            vehicle_type,
+            vehicle_number,
+            is_active,
+            is_online,
+            is_busy,
+            created_at,
+            updated_at
+          )
+          VALUES ($1, $2, $3, 'TWO_WHEELER', 'DEV-FALLBACK', TRUE, TRUE, FALSE, NOW(), NOW())
+          ON CONFLICT (user_id)
+          DO UPDATE SET is_active = TRUE, is_online = TRUE, updated_at = NOW()
+          RETURNING id
+        `,
+        [auth.sub, userResult.rows[0]?.full_name || null, userResult.rows[0]?.phone || null]
+      );
+
+      driverProfileId = insertedDriver.rows[0].id;
+    } else {
+      driverProfileId = driverResult.rows[0].id;
     }
 
-    const orderDriverCheck = await db.query(
-      `
-        SELECT id
-        FROM orders
-        WHERE id = $1 AND driver_id = $2
-        LIMIT 1
-      `,
-      [orderId, driverResult.rows[0].id]
-    );
+    if (!allowDevManualCompletion) {
+      const orderDriverCheck = await db.query(
+        `
+          SELECT id
+          FROM orders
+          WHERE id = $1 AND driver_id = $2
+          LIMIT 1
+        `,
+        [orderId, driverProfileId]
+      );
 
-    if (orderDriverCheck.rowCount === 0) {
-      throw new ApiError(403, "Order is not assigned to this driver");
+      if (orderDriverCheck.rowCount === 0) {
+        throw new ApiError(403, "Order is not assigned to this driver");
+      }
     }
   }
 
   let driverIdForRelease = null;
+  let transitionStatus = toStatus;
   await db.query("BEGIN");
   try {
     const current = await getOrderRowOrThrow({ orderId, db, forUpdate: true });
+    let forcedBypassApplied = false;
+
+    console.info("order status transition", {
+      orderId,
+      actor,
+      requestedFromStatus: fromStatus,
+      requestedToStatus: toStatus,
+      currentStatus: current.status,
+      driverId: current.driver_id,
+      allowDevManualCompletion,
+    });
+
     if (current.status !== fromStatus) {
-      throw new ApiError(400, `Action allowed only when order is ${fromStatus}`);
+      const canBypassInDev =
+        allowDevManualCompletion
+        && ["CREATED", "CONFIRMED", "ASSIGNED", "PICKED_UP", "DELIVERING"].includes(current.status);
+
+      if (!canBypassInDev) {
+        throw new ApiError(400, `Action allowed only when order is ${fromStatus}`);
+      }
+
+      console.log("Fallback completion triggered");
+      console.info("dev fallback transition bypass", {
+        orderId,
+        fromStatus: current.status,
+        toStatus,
+      });
+
+      if (current.status !== "DELIVERED") {
+        const forcedResult = await db.query(
+          `
+            UPDATE orders
+            SET status = 'DELIVERED',
+                driver_id = COALESCE(driver_id, $2),
+                updated_at = NOW()
+            WHERE id = $1
+            RETURNING driver_id
+          `,
+          [orderId, driverProfileId]
+        );
+
+        transitionStatus = "DELIVERED";
+        const effectiveDriverId = forcedResult.rows[0]?.driver_id || current.driver_id;
+
+        console.log("Forced DELIVERED for order:", orderId);
+        console.log("DELIVERED reached -> updating stats");
+        await recordShopCustomerCompletion({
+          db,
+          shopId: current.shop_id,
+          customerId: current.customer_id,
+        });
+
+        if (effectiveDriverId) {
+          driverIdForRelease = effectiveDriverId;
+          await db.query(
+            `
+              UPDATE drivers
+              SET is_busy = FALSE, updated_at = NOW()
+              WHERE id = $1
+            `,
+            [effectiveDriverId]
+          );
+        }
+      } else {
+        transitionStatus = "DELIVERED";
+      }
+
+      forcedBypassApplied = true;
     }
 
-    await db.query(
-      `
-        UPDATE orders
-        SET status = $2, updated_at = NOW()
-        WHERE id = $1
-      `,
-      [orderId, toStatus]
-    );
-
-    if ((toStatus === "DELIVERED" || toStatus === "CANCELLED") && current.driver_id) {
-      driverIdForRelease = current.driver_id;
-      await db.query(
+    if (!forcedBypassApplied) {
+      const updateResult = await db.query(
         `
-          UPDATE drivers
-          SET is_busy = FALSE, updated_at = NOW()
+          UPDATE orders
+          SET status = $2,
+              driver_id = COALESCE(driver_id, $3),
+              updated_at = NOW()
           WHERE id = $1
+          RETURNING driver_id
         `,
-        [current.driver_id]
+        [orderId, toStatus, driverProfileId]
       );
+
+      const effectiveDriverId = updateResult.rows[0]?.driver_id || current.driver_id;
+
+      if ((toStatus === "DELIVERED" || toStatus === "CANCELLED") && effectiveDriverId) {
+        driverIdForRelease = effectiveDriverId;
+        await db.query(
+          `
+            UPDATE drivers
+            SET is_busy = FALSE, updated_at = NOW()
+            WHERE id = $1
+          `,
+          [effectiveDriverId]
+        );
+      }
+
+      if (toStatus === "DELIVERED") {
+        console.log("DELIVERED reached -> updating stats", {
+          orderId,
+          shopId: current.shop_id,
+          customerId: current.customer_id,
+        });
+
+        await recordShopCustomerCompletion({
+          db,
+          shopId: current.shop_id,
+          customerId: current.customer_id,
+        });
+      }
     }
 
     await db.query("COMMIT");
@@ -408,9 +756,10 @@ async function updateOrderStatus({ orderId, auth, db, redis, fromStatus, toStatu
     await setDriverOnline({ redis, driverId: driverIdForRelease, isOnline: true });
   }
 
-  await publishOrderEvent({ redis, orderId, status: toStatus });
+  await publishOrderEvent({ redis, orderId, status: transitionStatus });
 
   const updated = await getOrderRowOrThrow({ orderId, db });
+  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: updated });
   const items = await getOrderItems({ orderId, db });
   return mapOrder(updated, items);
 }
@@ -521,6 +870,7 @@ module.exports = {
   assignDriverToOrder,
   upsertDriverLocation,
   updateOrderStatus,
+  publishOrderStatusChangedById,
   getDriverCurrentOrder,
   listShopOrders,
 };

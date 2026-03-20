@@ -5,11 +5,11 @@ const { config } = require("../../../apps/api-gateway/src/lib/config");
 const { createRedisPubSub } = require("./redis-pubsub");
 const { createSubscriptionStore } = require("./subscriptions");
 const { createWsMessageRouter, broadcast, safeSend } = require("./ws-router");
-
-const ORDER_EVENTS_CHANNEL = "order:events";
+const { createKafkaConsumer } = require("../../../lib/kafka/consumer");
+const { KAFKA_TOPICS, EVENT_TYPES } = require("../../../lib/kafka/event-schema");
 
 function setupTrackingRealtime({ server, db, redisUrl }) {
-  const { publisher, subscriber, close } = createRedisPubSub(redisUrl);
+  const { publisher, close } = createRedisPubSub(redisUrl);
   const store = createSubscriptionStore();
   const wss = new WebSocketServer({ noServer: true });
   const routeMessage = createWsMessageRouter({ db, publisher, store });
@@ -42,31 +42,68 @@ function setupTrackingRealtime({ server, db, redisUrl }) {
     });
   });
 
-  subscriber.subscribe(ORDER_EVENTS_CHANNEL).catch((err) => {
-    console.error("tracking subscribe failed", err.message);
-  });
+  const kafkaConsumer = createKafkaConsumer({
+    clientId: "tracking-service",
+    groupId: "tracking-service-group",
+    brokers: config.kafkaBrokers,
+    topics: [KAFKA_TOPICS.orderEvents, KAFKA_TOPICS.driverEvents],
+    eachEvent: async (event) => {
+      const payload = event.payload || {};
 
-  subscriber.on("message", (_channel, raw) => {
-    try {
-      const event = JSON.parse(raw);
-      if (!event.orderId || !event.status) {
+      if (event.eventType === EVENT_TYPES.ORDER_STATUS_CHANGED) {
+        if (!payload.orderId || !payload.status) {
+          return;
+        }
+
+        broadcast(store.subscribersForOrder(payload.orderId), {
+          type: "ORDER_STATUS",
+          orderId: payload.orderId,
+          status: payload.status,
+          timestamp: event.timestamp || new Date().toISOString(),
+        });
         return;
       }
 
-      broadcast(store.subscribersForOrder(event.orderId), {
-        type: "ORDER_STATUS",
-        orderId: event.orderId,
-        status: event.status,
-        timestamp: event.timestamp || new Date().toISOString(),
-      });
-    } catch (err) {
-      console.error("tracking event parse failed", err.message);
-    }
+      if (event.eventType === EVENT_TYPES.DRIVER_LOCATION_UPDATE) {
+        if (!payload.driverId || payload.lat === undefined || payload.lng === undefined) {
+          return;
+        }
+
+        const updatedAt = event.timestamp || new Date().toISOString();
+        await publisher.set(
+          `driver:location:${payload.driverId}`,
+          JSON.stringify({
+            lat: payload.lat,
+            lng: payload.lng,
+            orderId: payload.orderId || null,
+            updatedAt,
+          }),
+          "EX",
+          30
+        );
+
+        if (payload.orderId) {
+          broadcast(store.subscribersForOrder(payload.orderId), {
+            type: "DRIVER_LOCATION_UPDATE",
+            orderId: payload.orderId,
+            driverId: payload.driverId,
+            lat: payload.lat,
+            lng: payload.lng,
+            timestamp: updatedAt,
+          });
+        }
+      }
+    },
+  });
+
+  kafkaConsumer.start().catch((err) => {
+    console.error("tracking kafka consumer failed", err.message);
   });
 
   return {
     close: async () => {
       wss.close();
+      await kafkaConsumer.stop();
       await close();
     },
   };
