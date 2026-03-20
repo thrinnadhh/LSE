@@ -225,81 +225,109 @@ async function getTrendingShops({ db, limit = 10 }) {
   }));
 }
 
-async function personalizedRecommendations({ preferences, userLat, userLng, db, limit = 20 }) {
-  console.log("Generating personalized recommendations");
+async function getPersonalizedRecommended({ userId, userLat, userLng, db, limit = 20 }) {
+  console.log("[Phase 14.1] Fetching personalized recommendations for user:", userId);
   
-  if (!preferences || preferences.length === 0) {
-    return [];
-  }
+  try {
+    // STEP 1: GET USER SEARCH HISTORY
+    const searchHistoryResult = await db.query(`
+      SELECT metadata->>'query' AS query, COUNT(*) AS freq
+      FROM user_events
+      WHERE user_id = $1
+      AND event_type = 'SEARCH'
+      GROUP BY query
+      ORDER BY freq DESC
+      LIMIT 5
+    `, [userId]);
 
-  const recommended = [];
-  const seenShops = new Set();
+    const topQueries = searchHistoryResult.rows.map(row => row.query);
+    console.log("[Phase 14.1] Top search queries:", topQueries);
 
-  // For each preferred search, find matching shops
-  for (const pref of preferences) {
-    const query = pref.query;
+    if (!topQueries || topQueries.length === 0) {
+      console.log("[Phase 14.1] No search history found");
+      return [];
+    }
+
+    // STEP 2: FETCH SHOPS BASED ON USER INTEREST
+    let recommended = [];
     
-    // Simple query-based search: shops matching the preference
-    const result = await db.query(`
-      SELECT
-        s.id,
-        s.name,
-        s.category,
-        COALESCE(s.rating_avg, 0) AS rating,
-        ST_Distance(
-          COALESCE(sl.location, s.location),
-          ST_SetSRID(ST_Point($3, $2), 4326)::geography
-        ) AS distance_meters
-      FROM shops s
-      LEFT JOIN shop_locations sl ON sl.shop_id = s.id
-      WHERE (s.name ILIKE $1 OR s.category ILIKE $1)
-        AND COALESCE(s.is_active, TRUE) = TRUE
-        AND ST_DWithin(
-          COALESCE(sl.location, s.location),
-          ST_SetSRID(ST_Point($3, $2), 4326)::geography,
-          5000
-        )
-      ORDER BY distance_meters ASC
-      LIMIT $4
-    `, [`%${query}%`, userLat, userLng, 6]);
+    for (const query of topQueries) {
+      try {
+        const shops = await db.query(`
+          SELECT
+            s.id,
+            s.name,
+            s.category,
+            COALESCE(s.rating_avg, 0) AS rating,
+            ST_Distance(
+              COALESCE(sl.location, s.location),
+              ST_SetSRID(ST_Point($3, $2), 4326)::geography
+            ) AS distance_meters
+          FROM shops s
+          LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+          WHERE (s.name ILIKE $1 OR s.category::text ILIKE $1)
+            AND COALESCE(s.is_active, TRUE) = TRUE
+            AND ST_DWithin(
+              COALESCE(sl.location, s.location),
+              ST_SetSRID(ST_Point($3, $2), 4326)::geography,
+              5000
+            )
+          ORDER BY distance_meters ASC
+          LIMIT 5
+        `, [`%${query}%`, userLat, userLng]);
 
-    for (const row of result.rows) {
-      if (!seenShops.has(row.id)) {
-        const distance = Math.round(Number(row.distance_meters || 0));
-        recommended.push({
-          shopId: row.id,
-          name: row.name,
-          category: row.category,
-          rating: Number(row.rating || 0),
-          deliveryTag: getDeliveryTag(distance),
-        });
-        seenShops.add(row.id);
+        recommended.push(...shops.rows);
+      } catch (err) {
+        console.warn("[Phase 14.1] Error fetching shops for query:", query, err.message);
       }
     }
-  }
 
-  return recommended.slice(0, limit);
+    // STEP 3: REMOVE DUPLICATES
+    const unique = new Map();
+    recommended.forEach(row => {
+      const distance = Math.round(Number(row.distance_meters || 0));
+      const shop = {
+        shopId: row.id,
+        name: row.name,
+        category: row.category,
+        rating: Number(row.rating || 0),
+        deliveryTag: getDeliveryTag(distance),
+      };
+      unique.set(row.id, shop);
+    });
+
+    // STEP 4: LIMIT RESULTS
+    const result = Array.from(unique.values()).slice(0, limit);
+    console.log("[Phase 14.1] Personalized recommendations:", result.length);
+    return result;
+  } catch (err) {
+    console.error("[Phase 14.1] Error generating personalized recommendations:", err.message);
+    return [];
+  }
 }
 
 async function getHomepage({ userId, userLat, userLng, db }) {
   console.log("Building homepage for userId:", userId, { lat: userLat, lng: userLng });
 
-  // Get user search preferences for personalization
-  let userPreferences = [];
-  try {
-    const trackingService = require("../../tracking-service/src/tracking-service");
-    userPreferences = await trackingService.getUserSearchPreferences(db, userId, 3);
-    console.log("User preferences:", userPreferences);
-  } catch (err) {
-    console.warn("[home] Failed to get user preferences:", err.message);
-  }
-
-  // Batch fetch all sections with fallbacks
-  let [favorites, regularShops, recommendedShops] = await Promise.all([
+  // Batch fetch favorites, regularShops, and recommended sections
+  let [favorites, regularShops] = await Promise.all([
     getFavoriteShops({ userId, db, limit: 10 }),
     getRegularShops({ userId, db, limit: 10 }),
-    getRecommendedShops({ userId, userLat, userLng, db, limit: 20 }),
   ]);
+
+  // STEP 6: INTEGRATE INTO /home — Use Phase 14.1 personalized recommendations
+  let recommended = [];
+  try {
+    recommended = await getPersonalizedRecommended({
+      userId,
+      userLat,
+      userLng,
+      db,
+      limit: 20,
+    });
+  } catch (err) {
+    console.warn("[home] Phase 14.1 personalized recommendations failed:", err.message);
+  }
 
   // Fallback for empty favorites
   if (!favorites || favorites.length === 0) {
@@ -313,34 +341,23 @@ async function getHomepage({ userId, userLat, userLng, db }) {
     regularShops = await getTrendingShops({ db, limit: 10 });
   }
 
-  // Personalized recommendations based on search history
-  if (userPreferences && userPreferences.length > 0) {
-    console.log("Using personalized recommendations");
-    recommendedShops = await personalizedRecommendations({ 
-      preferences: userPreferences, 
-      userLat, 
-      userLng, 
-      db, 
-      limit: 20 
-    });
-  }
-
-  // Ensure recommended has diversity (fallback if empty)
-  if (!recommendedShops || recommendedShops.length === 0) {
-    console.log("No recommended shops found, using trending shops");
-    recommendedShops = await getTrendingShops({ db, limit: 20 });
+  // STEP 5: FALLBACK (MANDATORY) — Use trending shops if no personalized recommendations
+  if (!recommended || recommended.length === 0) {
+    console.log("[Phase 14.1] No personalized recommendations, using diversified fallback");
+    recommended = await getTrendingShops({ db, limit: 20 });
   }
 
   console.log("Homepage sections ready", {
     favoritesCount: favorites.length,
     regularShopsCount: regularShops.length,
-    recommendedCount: recommendedShops.length,
+    recommendedCount: recommended.length,
+    recommendedPersonalized: recommended.length > 0,
   });
 
   return {
     favorites: favorites || [],
     regularShops: regularShops || [],
-    recommended: recommendedShops || [],
+    recommended: recommended || [],
     categories: STATIC_CATEGORIES,
   };
 }

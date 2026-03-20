@@ -399,6 +399,93 @@ async function patchAvailability({ id, body, auth, db }) {
   return getShopById({ id, db });
 }
 
+async function getShopDashboard({ auth, db }) {
+  if (normalizeRole(auth.role) !== "shop_owner") {
+    throw new ApiError(403, "Only shop_owner can access dashboard");
+  }
+
+  const shopResult = await db.query(
+    `
+      SELECT id
+      FROM shops
+      WHERE owner_id = $1
+      ORDER BY created_at ASC
+      LIMIT 1
+    `,
+    [auth.sub]
+  );
+
+  if (shopResult.rowCount === 0) {
+    return {
+      hasShop: false,
+      message: "No shop found. Create your shop to start receiving orders.",
+      totalOrders: 0,
+      revenue: 0,
+      repeatCustomers: 0,
+      topProducts: [],
+    };
+  }
+
+  const shopId = shopResult.rows[0].id;
+
+  const [ordersResult, revenueResult, repeatCustomersResult, topProductsResult] = await Promise.all([
+    db.query(
+      `
+        SELECT COUNT(*)::int AS total_orders
+        FROM orders
+        WHERE shop_id = $1
+          AND status = 'DELIVERED'
+      `,
+      [shopId]
+    ),
+    db.query(
+      `
+        SELECT COALESCE(SUM(grand_total), 0) AS revenue
+        FROM orders
+        WHERE shop_id = $1
+          AND status = 'DELIVERED'
+      `,
+      [shopId]
+    ),
+    db.query(
+      `
+        SELECT COUNT(DISTINCT customer_id)::int AS repeat_customers
+        FROM orders
+        WHERE shop_id = $1
+          AND status = 'DELIVERED'
+      `,
+      [shopId]
+    ),
+    db.query(
+      `
+        SELECT product_name, COALESCE(SUM(qty), 0)::int AS total_sold
+        FROM order_items
+        WHERE order_id = ANY(
+          SELECT id
+          FROM orders
+          WHERE shop_id = $1
+            AND status = 'DELIVERED'
+        )
+        GROUP BY product_name
+        ORDER BY total_sold DESC
+        LIMIT 5
+      `,
+      [shopId]
+    ),
+  ]);
+
+  return {
+    hasShop: true,
+    totalOrders: Number(ordersResult.rows[0]?.total_orders || 0),
+    revenue: Number(revenueResult.rows[0]?.revenue || 0),
+    repeatCustomers: Number(repeatCustomersResult.rows[0]?.repeat_customers || 0),
+    topProducts: topProductsResult.rows.map((row) => ({
+      name: row.product_name,
+      sold: Number(row.total_sold || 0),
+    })),
+  };
+}
+
 module.exports = {
   ensureShopTables,
   createShop,
@@ -406,4 +493,5 @@ module.exports = {
   updateShop,
   findNearbyShops,
   patchAvailability,
+  getShopDashboard,
 };

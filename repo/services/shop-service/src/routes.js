@@ -55,6 +55,18 @@ function createShopRouter({ db }) {
   );
 
   router.get(
+    "/dashboard",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const payload = await shopService.getShopDashboard({
+        auth: req.auth,
+        db,
+      });
+      res.status(200).json(payload);
+    })
+  );
+
+  router.get(
     "/:id",
     asyncHandler(async (req, res) => {
       const shop = await shopService.getShopById({ id: req.params.id, query: req.query, db });
