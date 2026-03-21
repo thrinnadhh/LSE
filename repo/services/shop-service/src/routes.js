@@ -1,8 +1,13 @@
 const express = require("express");
 const { z } = require("zod");
 const shopService = require("./shop-service");
+const userService = require("../../user-service/src/user-service");
 const authService = require("../../auth-service/src/auth-service");
 const { ApiError, asyncHandler } = require("../../../apps/api-gateway/src/lib/errors");
+
+const regularShopsQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(50).optional(),
+});
 
 function requireAuth(req, _res, next) {
   const authHeader = req.headers.authorization || "";
@@ -63,6 +68,20 @@ function createShopRouter({ db }) {
         db,
       });
       res.status(200).json(payload);
+    })
+  );
+
+  router.get(
+    "/regular",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      const query = regularShopsQuerySchema.parse(req.query);
+      const items = await userService.listRegularShops({
+        userId: req.auth.sub,
+        limit: query.limit,
+        db,
+      });
+      res.status(200).json({ items });
     })
   );
 

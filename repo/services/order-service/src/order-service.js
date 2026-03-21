@@ -17,6 +17,19 @@ const driverLocationSchema = z.object({
   lng: z.coerce.number().min(-180).max(180),
 });
 
+const createOrderSchema = z.object({
+  shopId: z.string().uuid(),
+  items: z
+    .array(
+      z.object({
+        productId: z.string().uuid(),
+        quantity: z.coerce.number().int().positive(),
+      })
+    )
+    .min(1),
+  addressId: z.string().uuid().nullable().optional(),
+});
+
 function normalizeRole(role) {
   return String(role || "").toLowerCase();
 }
@@ -42,6 +55,159 @@ function mapOrder(row, items) {
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+async function resolveDeliveryAddressId({ db, customerId, requestedAddressId }) {
+  if (requestedAddressId) {
+    const ownedAddress = await db.query(
+      `
+        SELECT id
+        FROM user_addresses
+        WHERE id = $1
+          AND user_id = $2
+        LIMIT 1
+      `,
+      [requestedAddressId, customerId]
+    );
+
+    if (ownedAddress.rowCount === 0) {
+      throw new ApiError(400, "Invalid addressId for customer");
+    }
+
+    return ownedAddress.rows[0].id;
+  }
+
+  const addressResult = await db.query(
+    `
+      SELECT id
+      FROM user_addresses
+      WHERE user_id = $1
+      ORDER BY is_default DESC, created_at DESC
+      LIMIT 1
+    `,
+    [customerId]
+  );
+
+  if (addressResult.rowCount > 0) {
+    return addressResult.rows[0].id;
+  }
+
+  const insertedAddress = await db.query(
+    `
+      INSERT INTO user_addresses (
+        user_id,
+        label,
+        line1,
+        city,
+        state,
+        postal_code,
+        location,
+        is_default,
+        created_at
+      ) VALUES (
+        $1,
+        'Home',
+        'Auto-generated default address',
+        'Hyderabad',
+        'Telangana',
+        '500001',
+        ST_SetSRID(ST_MakePoint(78.4867, 17.385), 4326)::geography,
+        TRUE,
+        NOW()
+      )
+      RETURNING id
+    `,
+    [customerId]
+  );
+
+  return insertedAddress.rows[0].id;
+}
+
+async function createOrder({ body, auth, db }) {
+  const role = normalizeRole(auth.role);
+  if (role !== "customer") {
+    throw new ApiError(403, "Only customers can create orders");
+  }
+
+  const input = createOrderSchema.parse(body);
+
+  const productIds = input.items.map((item) => item.productId);
+  const productsResult = await db.query(
+    `
+      SELECT id, shop_id, name, price
+      FROM products
+      WHERE id = ANY($1::uuid[])
+        AND is_active = TRUE
+    `,
+    [productIds]
+  );
+
+  const productsById = new Map(productsResult.rows.map((row) => [row.id, row]));
+  if (productsById.size !== productIds.length) {
+    throw new ApiError(400, "One or more products are invalid");
+  }
+
+  const effectiveShopId = productsResult.rows[0].shop_id;
+  const multipleShopsSelected = productsResult.rows.some((row) => row.shop_id !== effectiveShopId);
+  if (multipleShopsSelected) {
+    throw new ApiError(400, "All products in an order must belong to the same shop");
+  }
+
+  const deliveryAddressId = await resolveDeliveryAddressId({
+    db,
+    customerId: auth.sub,
+    requestedAddressId: input.addressId || null,
+  });
+
+  let subtotal = 0;
+  const responseItems = input.items.map((item) => {
+    const product = productsById.get(item.productId);
+    const unitPrice = Number(product.price);
+    const lineTotal = unitPrice * Number(item.quantity);
+    subtotal += lineTotal;
+
+    return {
+      productName: product.name,
+      quantity: Number(item.quantity),
+      unitPrice,
+      subtotal: Number(lineTotal.toFixed(2)),
+    };
+  });
+
+  const created = await db.query(
+    `
+      INSERT INTO orders (
+        shop_id,
+        customer_id,
+        delivery_address_id,
+        status,
+        subtotal,
+        delivery_fee,
+        platform_fee,
+        discount_total,
+        grand_total,
+        created_at,
+        updated_at
+      )
+      VALUES (
+        $1,
+        $2,
+        $3,
+        'CREATED',
+        $4,
+        0,
+        0,
+        0,
+        $4,
+        NOW(),
+        NOW()
+      )
+      RETURNING id, customer_id, shop_id, driver_id, status, grand_total, created_at, updated_at
+    `,
+    [effectiveShopId, auth.sub, deliveryAddressId, Number(subtotal.toFixed(2))]
+  );
+
+  return mapOrder(created.rows[0], responseItems);
 }
 
 async function runRedisSideEffect(taskName, task, timeoutMs = 1500) {
@@ -144,19 +310,62 @@ async function publishOrderStatusChangedById({ orderId, db, kafkaProducer }) {
   await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: order });
 }
 
-async function ensureOrderLifecycleTables(db) {
+async function ensureOrderTables(db) {
+  // 1. Order status type
   await db.query(`
-    DO $$
-    BEGIN
-      ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'CONFIRMED';
-      ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'ASSIGNED';
-      ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'PICKED_UP';
-      ALTER TYPE order_status ADD VALUE IF NOT EXISTS 'DELIVERING';
-    EXCEPTION
-      WHEN duplicate_object THEN NULL;
+    DO $$ BEGIN
+      CREATE TYPE order_status AS ENUM (
+        'CREATED', 'CONFIRMED', 'ASSIGNED', 'PICKED_UP', 'DELIVERING', 'DELIVERED', 'CANCELLED'
+      );
+    EXCEPTION WHEN duplicate_object THEN NULL;
     END $$;
   `);
 
+  // 2. user_addresses
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_addresses (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      label TEXT,
+      line1 TEXT,
+      city TEXT,
+      state TEXT,
+      postal_code TEXT,
+      location GEOGRAPHY(Point, 4326),
+      is_default BOOLEAN DEFAULT FALSE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // 3. orders
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS orders (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      customer_id UUID NOT NULL REFERENCES users(id),
+      shop_id UUID NOT NULL REFERENCES shops(id),
+      driver_id UUID,
+      delivery_address_id UUID REFERENCES user_addresses(id),
+      status order_status NOT NULL DEFAULT 'CREATED',
+      grand_total DECIMAL(12,2) NOT NULL DEFAULT 0,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // 4. order_items
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS order_items (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      order_id UUID NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      product_id UUID,
+      product_name TEXT NOT NULL,
+      qty INT NOT NULL,
+      unit_price DECIMAL(12,2) NOT NULL,
+      line_total DECIMAL(12,2) NOT NULL
+    );
+  `);
+
+  // 5. order lifecycle enhancements (drivers, etc.)
   await db.query(`
     CREATE TABLE IF NOT EXISTS drivers (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -175,21 +384,21 @@ async function ensureOrderLifecycleTables(db) {
     );
   `);
 
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS name TEXT;`);
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS phone TEXT;`);
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS is_active BOOLEAN NOT NULL DEFAULT TRUE;`);
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS is_online BOOLEAN NOT NULL DEFAULT FALSE;`);
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS is_busy BOOLEAN NOT NULL DEFAULT FALSE;`);
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;`);
-  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;`);
+  // Migrations / Alters
+  await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id);`).catch(() => {});
+  await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address_id UUID REFERENCES user_addresses(id);`).catch(() => {});
+  await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS is_busy BOOLEAN DEFAULT FALSE;`).catch(() => {});
 
-  await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id);`);
-
+  // Indices
   await db.query(`CREATE INDEX IF NOT EXISTS idx_orders_customer_id ON orders(customer_id);`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_orders_shop_id ON orders(shop_id);`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_orders_driver_id ON orders(driver_id);`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_drivers_is_online ON drivers(is_online);`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_drivers_is_busy ON drivers(is_busy);`);
+}
+
+async function ensureOrderLifecycleTables(db) {
+  return ensureOrderTables(db);
 }
 
 async function getOrderRowOrThrow({ orderId, db, forUpdate = false }) {
@@ -865,6 +1074,7 @@ async function listShopOrders({ shopId, auth, db }) {
 
 module.exports = {
   ensureOrderLifecycleTables,
+  createOrder,
   getOrderById,
   assignDriver,
   assignDriverToOrder,

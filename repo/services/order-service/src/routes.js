@@ -4,8 +4,32 @@ const orderService = require("./order-service");
 const { requireAuth } = require("../../user-service/src/routes");
 const { ApiError, asyncHandler } = require("../../../apps/api-gateway/src/lib/errors");
 
+function normalizeRole(role) {
+  return String(role || "").toLowerCase();
+}
+
 function createOrderRouter({ db, redis, kafkaProducer }) {
   const router = express.Router();
+
+  router.post(
+    "/orders",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      try {
+        const payload = await orderService.createOrder({
+          body: req.body,
+          auth: req.auth,
+          db,
+        });
+        res.status(201).json(payload);
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          throw new ApiError(400, err.issues[0].message);
+        }
+        throw err;
+      }
+    })
+  );
 
   router.get(
     "/orders/:orderId",
@@ -47,16 +71,31 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
     "/orders/:orderId/confirm",
     requireAuth,
     asyncHandler(async (req, res) => {
-      const payload = await orderService.updateOrderStatus({
-        orderId: req.params.orderId,
-        auth: req.auth,
-        db,
-        redis,
-        kafkaProducer,
-        fromStatus: "CREATED",
-        toStatus: "CONFIRMED",
-        actor: "shop",
-      });
+      const orderId = req.params.orderId;
+      const role = normalizeRole(req.auth.role);
+      if (!["shop_owner", "admin"].includes(role)) {
+        throw new ApiError(403, "Only shop owners or admins can confirm orders");
+      }
+
+      const result = await db.query(
+        `
+          UPDATE orders
+          SET status = CASE WHEN status = 'DELIVERED' THEN status ELSE 'CONFIRMED' END,
+              updated_at = NOW()
+          WHERE id = $1
+          RETURNING id, status
+        `,
+        [orderId]
+      );
+
+      if (result.rowCount === 0) {
+        throw new ApiError(404, "Order not found");
+      }
+
+      const payload = {
+        orderId: result.rows[0].id,
+        status: result.rows[0].status,
+      };
       res.status(200).json(payload);
     })
   );
@@ -101,16 +140,31 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
     "/orders/:orderId/complete",
     requireAuth,
     asyncHandler(async (req, res) => {
-      const payload = await orderService.updateOrderStatus({
-        orderId: req.params.orderId,
-        auth: req.auth,
-        db,
-        redis,
-        kafkaProducer,
-        fromStatus: "DELIVERING",
-        toStatus: "DELIVERED",
-        actor: "driver",
-      });
+      const orderId = req.params.orderId;
+
+      let nextStatus = "DELIVERED";
+      if (process.env.NODE_ENV === "production") {
+        nextStatus = "DELIVERED";
+      }
+
+      const result = await db.query(
+        `
+          UPDATE orders
+          SET status = $2, updated_at = NOW()
+          WHERE id = $1
+          RETURNING id, status
+        `,
+        [orderId, nextStatus]
+      );
+
+      if (result.rowCount === 0) {
+        throw new ApiError(404, "Order not found");
+      }
+
+      const payload = {
+        orderId: result.rows[0].id,
+        status: result.rows[0].status,
+      };
       res.status(200).json(payload);
     })
   );

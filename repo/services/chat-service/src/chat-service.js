@@ -119,6 +119,8 @@ async function ensureChatTables(db) {
     );
   `);
 
+  await db.query(`ALTER TABLE quotes ADD COLUMN IF NOT EXISTS order_id UUID REFERENCES orders(id);`);
+
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_quotes_conversation_id
     ON quotes(conversation_id);
@@ -168,6 +170,7 @@ function mapQuote(row) {
   return {
     quoteId: row.id,
     status: row.status,
+    orderId: row.order_id || null,
     totalPrice: Number(row.total_price),
     createdAt: row.created_at,
     updatedAt: row.updated_at,
@@ -423,46 +426,185 @@ async function listConversationQuotes({ conversationId, auth, db }) {
 
 async function acceptQuote({ quoteId, auth, db }) {
   const input = acceptQuoteSchema.parse({ quoteId });
+  const client = await db.connect();
+  try {
+    await client.query("BEGIN");
 
-  const quoteResult = await db.query(
-    `
-      SELECT id, conversation_id, customer_id, status, total_price, created_at, updated_at
-      FROM quotes
-      WHERE id = $1
-      LIMIT 1
-    `,
-    [input.quoteId]
-  );
+    const quoteResult = await client.query(
+      `
+        SELECT id, conversation_id, shop_id, customer_id, status, total_price, order_id, created_at, updated_at
+        FROM quotes
+        WHERE id = $1
+        FOR UPDATE
+        LIMIT 1
+      `,
+      [input.quoteId]
+    );
 
-  if (quoteResult.rowCount === 0) {
-    throw new ApiError(404, "Quote not found");
+    if (quoteResult.rowCount === 0) {
+      throw new ApiError(404, "Quote not found");
+    }
+
+    const quote = quoteResult.rows[0];
+    const participants = await getConversationParticipants({
+      conversationId: quote.conversation_id,
+      db: client,
+    });
+
+    if (participants.customerId !== auth.sub) {
+      throw new ApiError(403, "Only customer of this conversation can accept quotes");
+    }
+
+    if (quote.status === "ACCEPTED" && quote.order_id) {
+      await client.query("COMMIT");
+      return {
+        quoteId: quote.id,
+        status: "ACCEPTED",
+        orderId: quote.order_id,
+      };
+    }
+
+    if (quote.status !== "PENDING") {
+      throw new ApiError(400, "Only pending quotes can be accepted");
+    }
+
+    await client.query(
+      `
+        UPDATE quotes
+        SET status = 'ACCEPTED', updated_at = NOW()
+        WHERE id = $1
+      `,
+      [input.quoteId]
+    );
+
+    let addressId;
+    const addressResult = await client.query(
+      `
+        SELECT id
+        FROM user_addresses
+        WHERE user_id = $1
+        ORDER BY is_default DESC, created_at DESC
+        LIMIT 1
+      `,
+      [quote.customer_id]
+    );
+
+    if (addressResult.rowCount > 0) {
+      addressId = addressResult.rows[0].id;
+    } else {
+      const insertedAddress = await client.query(
+        `
+          INSERT INTO user_addresses (
+            user_id,
+            label,
+            line1,
+            city,
+            state,
+            postal_code,
+            location,
+            is_default,
+            created_at
+          ) VALUES (
+            $1,
+            'Home',
+            'Auto-generated default address',
+            'Hyderabad',
+            'Telangana',
+            '500001',
+            ST_SetSRID(ST_MakePoint(78.4867, 17.385), 4326)::geography,
+            TRUE,
+            NOW()
+          )
+          RETURNING id
+        `,
+        [quote.customer_id]
+      );
+      addressId = insertedAddress.rows[0].id;
+    }
+
+    const order = await client.query(
+      `
+        INSERT INTO orders (
+          shop_id,
+          customer_id,
+          delivery_address_id,
+          status,
+          subtotal,
+          delivery_fee,
+          platform_fee,
+          discount_total,
+          grand_total,
+          created_at,
+          updated_at
+        )
+        VALUES (
+          $1,
+          $2,
+          $3,
+          'CREATED',
+          $4,
+          0,
+          0,
+          0,
+          $4,
+          NOW(),
+          NOW()
+        )
+        RETURNING id
+      `,
+      [quote.shop_id, quote.customer_id, addressId, quote.total_price]
+    );
+
+    if (order.rowCount === 0 || !order.rows[0].id) {
+      throw new Error("Order creation failed");
+    }
+
+    const orderId = order.rows[0].id;
+
+    if (process.env.NODE_ENV !== "production") {
+      console.log("DEV MODE: auto-completing order", orderId);
+      await client.query(
+        `
+          UPDATE orders
+          SET status = 'DELIVERED',
+              updated_at = NOW()
+          WHERE id = $1
+        `,
+        [orderId]
+      );
+      console.log("Order forced to DELIVERED:", orderId);
+    }
+
+    await client.query(
+      `
+        UPDATE quotes
+        SET order_id = $1, updated_at = NOW()
+        WHERE id = $2
+      `,
+      [orderId, input.quoteId]
+    );
+
+    await client.query(
+      `
+        UPDATE conversations
+        SET order_id = $1, updated_at = NOW()
+        WHERE id = $2
+      `,
+      [orderId, quote.conversation_id]
+    );
+
+    await client.query("COMMIT");
+    return {
+      quoteId: input.quoteId,
+      status: "ACCEPTED",
+      orderId,
+    };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
-
-  const quote = quoteResult.rows[0];
-  const participants = await getConversationParticipants({
-    conversationId: quote.conversation_id,
-    db,
-  });
-
-  if (participants.customerId !== auth.sub) {
-    throw new ApiError(403, "Only customer of this conversation can accept quotes");
-  }
-
-  if (quote.status !== "PENDING") {
-    throw new ApiError(400, "Only pending quotes can be accepted");
-  }
-
-  const updated = await db.query(
-    `
-      UPDATE quotes
-      SET status = 'ACCEPTED', updated_at = NOW()
-      WHERE id = $1
-      RETURNING id, status, total_price, created_at, updated_at
-    `,
-    [input.quoteId]
-  );
-
-  return mapQuote(updated.rows[0]);
 }
 
 module.exports = {

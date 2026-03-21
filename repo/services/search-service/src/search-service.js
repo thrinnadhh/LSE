@@ -36,6 +36,103 @@ function getDeliveryTag(distanceMeters) {
   return "Nearby";
 }
 
+function splitSearchTerms(query) {
+  return String(query || "")
+    .toLowerCase()
+    .trim()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+async function fallbackSearchByTerms({ db, lat, lng, terms, limit = 20 }) {
+  if (!terms || terms.length === 0) {
+    return [];
+  }
+
+  const patterns = terms.map((term) => `%${term}%`);
+  const wholeQueryPattern = `%${terms.join(" ")}%`;
+  const result = await db.query(
+    `
+      SELECT
+        s.id,
+        s.name,
+        COALESCE(s.rating_avg, 0) AS rating,
+        ARRAY_REMOVE(ARRAY_AGG(DISTINCT p.name), NULL) AS matched_products,
+        MAX(
+          CASE
+            WHEN LOWER(p.name) ILIKE $5 THEN 3
+            WHEN LOWER(s.name) ILIKE $5 THEN 2
+            WHEN LOWER(COALESCE(s.category::text, '')) ILIKE $5 THEN 1
+            ELSE 0
+          END
+        ) AS relevance,
+        ST_Distance(
+          COALESCE(sl.location, s.location),
+          ST_SetSRID(ST_Point($3, $2), 4326)::geography
+        ) AS distance_meters
+      FROM shops s
+      LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+      JOIN products p ON p.shop_id = s.id
+      WHERE COALESCE(s.is_active, TRUE) = TRUE
+        AND COALESCE(p.is_active, TRUE) = TRUE
+        AND ST_DWithin(
+          COALESCE(sl.location, s.location),
+          ST_SetSRID(ST_Point($3, $2), 4326)::geography,
+          5000
+        )
+        AND (
+          LOWER(p.name) ILIKE ANY($4::text[])
+          OR LOWER(s.name) ILIKE ANY($4::text[])
+          OR LOWER(COALESCE(s.category::text, '')) ILIKE ANY($4::text[])
+        )
+      GROUP BY s.id, s.name, s.rating_avg, distance_meters, s.created_at
+      ORDER BY relevance DESC, s.created_at DESC
+      LIMIT $1
+    `,
+    [limit, lat, lng, patterns, wholeQueryPattern]
+  );
+
+  return result.rows.map((row) => {
+    const distance = Math.round(Number(row.distance_meters || 0));
+    return {
+      shopId: row.id,
+      name: row.name,
+      rating: Number(row.rating || 0),
+      matchedProducts: Array.isArray(row.matched_products) ? row.matched_products.slice(0, 5) : [],
+      deliveryTag: getDeliveryTag(distance),
+    };
+  });
+}
+
+async function fallbackSearch({ db, lat, lng, limit = 20 }) {
+  const result = await db.query(
+    `
+      SELECT
+        s.id,
+        s.name,
+        COALESCE(s.rating_avg, 0) AS rating,
+        ST_Distance(
+          COALESCE(sl.location, s.location),
+          ST_SetSRID(ST_Point($3, $2), 4326)::geography
+        ) AS distance_meters
+      FROM shops s
+      LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+      WHERE COALESCE(s.is_active, TRUE) = TRUE
+      ORDER BY s.created_at DESC
+      LIMIT $1
+    `,
+    [limit, lat, lng]
+  );
+
+  return result.rows.map((shop) => ({
+    shopId: shop.id,
+    name: shop.name,
+    rating: Number(shop.rating || 0),
+    matchedProducts: [],
+    deliveryTag: "Nearby",
+  }));
+}
+
 async function ensureProductsIndex() {
   try {
     await openSearchRequest(`/${PRODUCTS_INDEX}`, {
@@ -178,6 +275,8 @@ async function searchProducts({ query }) {
 async function searchShops({ query, db, userId = null }) {
   const input = searchShopsSchema.parse(query);
   const radiusInKm = input.radius / 1000;
+  const normalizedQuery = String(input.q || "").toLowerCase().trim();
+  const terms = splitSearchTerms(normalizedQuery);
 
   // Track search event for personalization
   if (userId) {
@@ -189,36 +288,54 @@ async function searchShops({ query, db, userId = null }) {
     }
   }
 
-  const response = await openSearchRequest(`/${PRODUCTS_INDEX}/_search`, {
-    method: "POST",
-    body: {
-      size: 120,
-      _source: ["shop_id", "product_name", "shop_name"],
-      query: {
-        bool: {
-          must: {
-            multi_match: {
-              query: input.q,
-              fields: ["product_name^3", "shop_name"],
+  let response;
+  try {
+    response = await openSearchRequest(`/${PRODUCTS_INDEX}/_search`, {
+      method: "POST",
+      body: {
+        size: 120,
+        _source: ["shop_id", "product_name", "shop_name"],
+        query: {
+          bool: {
+            must: {
+              multi_match: {
+                query: input.q,
+                fields: ["product_name^3", "shop_name"],
+              },
             },
-          },
-          filter: {
-            geo_distance: {
-              distance: `${radiusInKm}km`,
-              location: {
-                lat: input.lat,
-                lon: input.lng,
+            filter: {
+              geo_distance: {
+                distance: `${radiusInKm}km`,
+                location: {
+                  lat: input.lat,
+                  lon: input.lng,
+                },
               },
             },
           },
         },
       },
-    },
-  });
+    });
+  } catch (err) {
+    console.warn("[search] OpenSearch failed, using fallback:", err.message);
+    response = { hits: { hits: [] } };
+  }
 
   const hits = response.hits?.hits || [];
   if (hits.length === 0) {
-    return [];
+    let results = await fallbackSearchByTerms({
+      db,
+      lat: input.lat,
+      lng: input.lng,
+      terms,
+      limit: 20,
+    });
+
+    if (!results.length) {
+      results = await fallbackSearch({ db, lat: input.lat, lng: input.lng, limit: 20 });
+    }
+
+    return results;
   }
 
   const shopMatches = new Map();
@@ -294,7 +411,7 @@ async function searchShops({ query, db, userId = null }) {
     repeatMap = new Map(repeatsResult.rows.map((row) => [row.shop_id, Number(row.order_count)]));
   }
 
-  return shopIds
+  let results = shopIds
     .map((shopId) => {
       const shop = shopById.get(shopId);
       if (!shop) {
@@ -325,6 +442,22 @@ async function searchShops({ query, db, userId = null }) {
     .filter(Boolean)
     .sort((a, b) => b.score - a.score || a._distanceForTieBreak - b._distanceForTieBreak)
     .map(({ score: _score, _distanceForTieBreak: _internalDistance, ...item }) => item);
+
+  if (!results.length) {
+    results = await fallbackSearchByTerms({
+      db,
+      lat: input.lat,
+      lng: input.lng,
+      terms,
+      limit: 20,
+    });
+  }
+
+  if (!results.length) {
+    results = await fallbackSearch({ db, lat: input.lat, lng: input.lng, limit: 20 });
+  }
+
+  return results;
 }
 
 module.exports = {

@@ -86,4 +86,39 @@ async function ensureTrackingTables() {
   `);
 }
 
-module.exports = { pool, ensureAuthTables, ensureTrackingTables };
+async function ensureBaseTables() {
+  // 1. users table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS users (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      phone VARCHAR(20) NOT NULL UNIQUE,
+      role VARCHAR(20) NOT NULL DEFAULT 'CUSTOMER',
+      full_name TEXT,
+      email TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  // 2. shops table
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS shops (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      owner_user_id UUID NOT NULL REFERENCES users(id),
+      owner_id UUID REFERENCES users(id),
+      name TEXT NOT NULL,
+      description TEXT,
+      category TEXT,
+      phone TEXT,
+      status TEXT DEFAULT 'ACTIVE',
+      opening_hours JSONB DEFAULT '{}',
+      location GEOGRAPHY(Point, 4326),
+      city TEXT,
+      is_active BOOLEAN DEFAULT TRUE,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    );
+  `);
+}
+
+module.exports = { pool, ensureBaseTables, ensureAuthTables, ensureTrackingTables };

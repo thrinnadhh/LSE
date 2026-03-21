@@ -33,7 +33,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
   const router = express.Router();
 
   router.get(
-    "/drivers",
+    "/",
     requireAuth,
     asyncHandler(async (req, res) => {
       const items = await driverService.listDrivers({
@@ -46,7 +46,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
   );
 
   router.post(
-    "/drivers",
+    "/",
     requireAuth,
     asyncHandler(async (req, res) => {
       try {
@@ -68,7 +68,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
   );
 
   router.post(
-    "/drivers/location",
+    "/location",
     requireAuth,
     asyncHandler(async (req, res) => {
       try {
@@ -126,7 +126,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
   );
 
   router.post(
-    "/drivers/offline",
+    "/offline",
     requireAuth,
     asyncHandler(async (req, res) => {
       const role = normalizeRole(req.auth.role);
