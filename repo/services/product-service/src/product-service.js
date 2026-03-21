@@ -136,6 +136,7 @@ async function resolveOwnedShopId({ requestedShopId, ownerId, db }) {
 }
 
 async function createProduct({ body, auth, db, producer }) {
+  console.log("createProduct auth object:", JSON.stringify(auth));
   if (normalizeRole(auth.role) !== "shop_owner") {
     throw new ApiError(403, "Only shop_owner can create products");
   }

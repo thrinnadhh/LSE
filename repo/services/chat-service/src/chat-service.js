@@ -559,20 +559,6 @@ async function acceptQuote({ quoteId, auth, db }) {
 
     const orderId = order.rows[0].id;
 
-    if (process.env.NODE_ENV !== "production") {
-      console.log("DEV MODE: auto-completing order", orderId);
-      await client.query(
-        `
-          UPDATE orders
-          SET status = 'DELIVERED',
-              updated_at = NOW()
-          WHERE id = $1
-        `,
-        [orderId]
-      );
-      console.log("Order forced to DELIVERED:", orderId);
-    }
-
     await client.query(
       `
         UPDATE quotes

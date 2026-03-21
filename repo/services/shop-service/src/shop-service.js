@@ -460,9 +460,8 @@ async function getShopDashboard({ auth, db }) {
     `
       SELECT id
       FROM shops
-      WHERE owner_id = $1
-      ORDER BY created_at ASC
-      LIMIT 1
+      WHERE owner_id = $1 OR owner_user_id = $1
+      ORDER BY created_at DESC
     `,
     [auth.sub]
   );
@@ -478,35 +477,35 @@ async function getShopDashboard({ auth, db }) {
     };
   }
 
-  const shopId = shopResult.rows[0].id;
+  const shopIds = shopResult.rows.map((row) => row.id);
 
   const [ordersResult, revenueResult, repeatCustomersResult, topProductsResult] = await Promise.all([
     db.query(
       `
         SELECT COUNT(*)::int AS total_orders
         FROM orders
-        WHERE shop_id = $1
+        WHERE shop_id = ANY($1::uuid[])
           AND status = 'DELIVERED'
       `,
-      [shopId]
+      [shopIds]
     ),
     db.query(
       `
         SELECT COALESCE(SUM(grand_total), 0) AS revenue
         FROM orders
-        WHERE shop_id = $1
+        WHERE shop_id = ANY($1::uuid[])
           AND status = 'DELIVERED'
       `,
-      [shopId]
+      [shopIds]
     ),
     db.query(
       `
         SELECT COUNT(DISTINCT customer_id)::int AS repeat_customers
         FROM orders
-        WHERE shop_id = $1
+        WHERE shop_id = ANY($1::uuid[])
           AND status = 'DELIVERED'
       `,
-      [shopId]
+      [shopIds]
     ),
     db.query(
       `
@@ -515,14 +514,14 @@ async function getShopDashboard({ auth, db }) {
         WHERE order_id = ANY(
           SELECT id
           FROM orders
-          WHERE shop_id = $1
+          WHERE shop_id = ANY($1::uuid[])
             AND status = 'DELIVERED'
         )
         GROUP BY product_name
         ORDER BY total_sold DESC
         LIMIT 5
       `,
-      [shopId]
+      [shopIds]
     ),
   ]);
 

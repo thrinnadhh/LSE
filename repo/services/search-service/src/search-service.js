@@ -13,7 +13,7 @@ const searchProductsSchema = z.object({
 
 // Support both 'lng' and 'lon' (common test tool alias)
 const searchShopsSchema = z.object({
-  q: z.string().trim().min(1).optional(),
+  q: z.string().trim().optional(),
   lat: z.coerce.number().min(-90).max(90),
   lng: z.coerce.number().min(-180).max(180).optional(),
   lon: z.coerce.number().min(-180).max(180).optional(),
@@ -287,6 +287,10 @@ async function searchShops({ query, db, userId = null }) {
   const radiusInKm = (input.radius ?? 5000) / 1000;
   const normalizedQuery = String(input.q || "").toLowerCase().trim();
   const terms = splitSearchTerms(normalizedQuery);
+
+  if (!normalizedQuery) {
+    return fallbackSearch({ db, lat: input.lat, lng: input.lng, limit: 20 });
+  }
 
   // Track search event for personalization
   if (userId) {

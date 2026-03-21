@@ -8,9 +8,9 @@ async function trackEvent(db, userId, eventType, entityId = null, metadata = {})
   
   try {
     await db.query(`
-      INSERT INTO user_events (user_id, event_type, entity_id, metadata)
-      VALUES ($1, $2, $3, $4)
-    `, [userId, eventType, entityId, metadata]);
+      INSERT INTO user_events (user_id, event_type, metadata)
+      VALUES ($1, $2, $3)
+    `, [userId, eventType, metadata]);
     
     console.log(`[tracking] Event tracked: ${eventType} for user ${userId}`);
   } catch (err) {

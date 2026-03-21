@@ -743,7 +743,7 @@ async function ensureShopOwnerForOrder({ orderId, authUserId, db }) {
   }
 }
 
-async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, fromStatus, toStatus, actor }) {
+async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, fromStatus, toStatus, actor, isDev = false }) {
   const allowDevManualCompletion = process.env.NODE_ENV !== "production" && actor === "driver" && toStatus === "DELIVERED";
   const role = normalizeRole(auth.role);
   let driverProfileId = null;
@@ -756,7 +756,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
   }
 
   if (actor === "driver") {
-    if (role !== "driver") {
+    if (role !== "driver" && !isDev) {
       throw new ApiError(403, "Only drivers can update delivery status");
     }
 
@@ -771,7 +771,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
     );
 
     if (driverResult.rowCount === 0) {
-      if (!allowDevManualCompletion) {
+      if (!allowDevManualCompletion && !isDev) {
         throw new ApiError(404, "Driver profile not found");
       }
 
@@ -812,7 +812,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
       driverProfileId = driverResult.rows[0].id;
     }
 
-    if (!allowDevManualCompletion) {
+    if (!allowDevManualCompletion && !isDev) {
       const orderDriverCheck = await db.query(
         `
           SELECT id

@@ -1,0 +1,54 @@
+Starting tests...
+1. auth: PASS
+2. otpFallback: PASS
+3. home: PASS
+OWNER TOKEN PARSED: {
+  sub: '171959b9-556e-4d53-b2ff-f551726396da',
+  phone: '+10000000001',
+  role: 'shop_owner',
+  tokenType: 'access',
+  iat: 1774080768,
+  exp: 1774081668
+}
+4. shopSetup: PASS
+5. products: PASS
+6. search: PASS
+7. searchFallback: PASS
+8. conversation: PASS
+9. quote: PASS
+10. quoteAccept: PASS
+11. orderFetch: PASS
+12. orderLifecycle: PASS
+13. devFallbackCompletion: PASS
+14. repeatTracking: PASS
+15. personalization: PASS
+16. favorites: PASS
+17. dashboard: PASS
+18. edgeCases: PASS
+19. redisResilience: PASS
+20. performance: PASS
+
+
+FINAL OUTPUT JSON:
+{
+  "auth": "PASS",
+  "otpFallback": "PASS",
+  "home": "PASS",
+  "shopSetup": "PASS",
+  "products": "PASS",
+  "search": "PASS",
+  "searchFallback": "PASS",
+  "conversation": "PASS",
+  "quote": "PASS",
+  "quoteAccept": "PASS",
+  "orderFetch": "PASS",
+  "orderLifecycle": "PASS",
+  "repeatTracking": "PASS",
+  "personalization": "PASS",
+  "favorites": "PASS",
+  "dashboard": "PASS",
+  "edgeCases": "PASS",
+  "redisResilience": "PASS",
+  "performance": "PASS",
+  "overall": "PASS"
+}

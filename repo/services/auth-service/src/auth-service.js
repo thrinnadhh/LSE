@@ -201,6 +201,8 @@ async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
       derivedRole = "CUSTOMER";
     } else if (input.phone === "+10000000001" || input.phone === "+15550000003" || input.phone === "+15550001111") {
       derivedRole = "SHOP_OWNER";
+    } else if (input.phone === "+10000000003") {
+      derivedRole = "DRIVER";
     }
 
     userResult = await db.query(
@@ -239,6 +241,17 @@ async function verifyOtp({ body, redis, db, ipAddress, userAgent }) {
       `
         UPDATE users
         SET role = 'SHOP_OWNER'
+        WHERE id = $1
+        RETURNING id, phone, role, full_name, email
+      `,
+      [userResult.rows[0].id]
+    );
+  } else if (input.phone === "+10000000003" && userResult.rows[0].role !== "DRIVER") {
+    // Force testing driver phones back to DRIVER
+    userResult = await db.query(
+      `
+        UPDATE users
+        SET role = 'DRIVER'
         WHERE id = $1
         RETURNING id, phone, role, full_name, email
       `,
