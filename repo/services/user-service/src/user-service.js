@@ -28,27 +28,23 @@ async function ensureUserCommerceTables(db) {
   await db.query(`
     CREATE TABLE IF NOT EXISTS shop_customer_stats (
       shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
-      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
       order_count INT NOT NULL DEFAULT 0,
       last_order_at TIMESTAMPTZ,
-      PRIMARY KEY (shop_id, user_id)
+      PRIMARY KEY (shop_id, customer_id)
     );
   `);
 
   await db.query(`
     ALTER TABLE shop_customer_stats
-    ADD COLUMN IF NOT EXISTS customer_id UUID;
+    ADD COLUMN IF NOT EXISTS user_id UUID REFERENCES users(id) ON DELETE CASCADE;
   `);
 
+  // Only update if user_id is NOT null and customer_id is NULL (unlikely but safe)
   await db.query(`
     UPDATE shop_customer_stats
     SET customer_id = user_id
-    WHERE customer_id IS NULL;
-  `);
-
-  await db.query(`
-    ALTER TABLE shop_customer_stats
-    ALTER COLUMN customer_id SET NOT NULL;
+    WHERE customer_id IS NULL AND user_id IS NOT NULL;
   `);
 
   await db.query(`
@@ -58,17 +54,7 @@ async function ensureUserCommerceTables(db) {
 
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_shop_customer_stats_user
-    ON shop_customer_stats(user_id, order_count DESC, last_order_at DESC);
-  `);
-
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_shop_customer_stats_user_id
-    ON shop_customer_stats(user_id);
-  `);
-
-  await db.query(`
-    CREATE INDEX IF NOT EXISTS idx_shop_customer_stats_shop_id
-    ON shop_customer_stats(shop_id);
+    ON shop_customer_stats(customer_id, order_count DESC, last_order_at DESC);
   `);
 }
 

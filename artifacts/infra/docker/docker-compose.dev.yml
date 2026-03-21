@@ -85,7 +85,7 @@ services:
     environment:
       APP_ENV: development
       DATABASE_URL: postgresql://${POSTGRES_USER:-postgres}:${POSTGRES_PASSWORD:-postgres}@postgres:5432/${POSTGRES_DB:-hyperlocal}
-      REDIS_URL: redis://redis:6379/0
+      REDIS_URL: redis://hyperlocal-redis:6379
       KAFKA_BROKERS: kafka:29092
       SEARCH_CLUSTER_URL: http://opensearch:9200
       JWT_SECRET: ${JWT_SECRET:-devsecret}

@@ -493,6 +493,36 @@ CREATE TABLE outbox_events (
 CREATE INDEX idx_outbox_unpublished ON outbox_events(published_at) WHERE published_at IS NULL;
 
 -- =========================
+-- PERSONALIZATION + STATS
+-- =========================
+
+CREATE TABLE IF NOT EXISTS favorite_shops (
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (user_id, shop_id)
+);
+
+CREATE TABLE IF NOT EXISTS shop_customer_stats (
+  customer_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+  order_count INTEGER NOT NULL DEFAULT 0,
+  last_order_at TIMESTAMPTZ,
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  PRIMARY KEY (customer_id, shop_id)
+);
+
+CREATE TABLE IF NOT EXISTS user_events (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  event_type VARCHAR(50) NOT NULL,
+  metadata JSONB NOT NULL DEFAULT '{}'::jsonb,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX idx_user_events_user_type ON user_events(user_id, event_type);
+
+-- =========================
 -- PARTITIONING GUIDANCE (OPTIONAL)
 -- =========================
 -- For high scale, partition these by month and city/zone:

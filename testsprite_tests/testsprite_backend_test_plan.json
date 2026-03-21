@@ -1,0 +1,52 @@
+[
+  {
+    "id": "TC001",
+    "title": "post auth send otp with valid and invalid phone",
+    "description": "Test the POST /auth/send-otp endpoint with valid phone numbers to receive OTP sent confirmation and with invalid phone formats to receive a 400 error."
+  },
+  {
+    "id": "TC002",
+    "title": "post auth verify otp with correct and incorrect otp",
+    "description": "Test the POST /auth/verify-otp endpoint with correct OTP to receive a JWT access token and with incorrect OTP to receive a 401 invalid OTP error."
+  },
+  {
+    "id": "TC003",
+    "title": "post shops with and without authorization",
+    "description": "Test the POST /shops endpoint with valid shop owner JWT to create a shop and without authorization header to receive a 401 unauthorized error."
+  },
+  {
+    "id": "TC004",
+    "title": "get shops by id with existing and nonexisting shop",
+    "description": "Test the GET /shops/:id endpoint with an existing shop ID to receive shop details and with a nonexistent shop ID to receive a 404 not found error."
+  },
+  {
+    "id": "TC005",
+    "title": "get shops dashboard with valid and invalid roles",
+    "description": "Test the GET /shops/dashboard endpoint with a valid shop owner JWT to receive dashboard metrics and with a JWT of a non-owner role to receive a 403 forbidden error."
+  },
+  {
+    "id": "TC006",
+    "title": "post products with valid data and missing fields",
+    "description": "Test the POST /products endpoint with valid product data and shop owner JWT to add a product and with missing required fields to receive a 400 validation error."
+  },
+  {
+    "id": "TC007",
+    "title": "get search shops with location and fallback scenarios",
+    "description": "Test the GET /search/shops endpoint with valid query and location parameters to receive a list of shops, without location parameters to receive a 400 error, and with backend errors to receive a 500 error or fallback cached results."
+  },
+  {
+    "id": "TC008",
+    "title": "post chat conversations and quotes with role based access",
+    "description": "Test the POST /chat/conversations endpoint with valid customer JWT to create a conversation, POST /chat/quotes with shop owner JWT to create a quote, and verify that customers cannot create quotes (403 forbidden)."
+  },
+  {
+    "id": "TC009",
+    "title": "post chat quotes accept with valid and invalid quote ids",
+    "description": "Test the POST /chat/quotes/:quoteId/accept endpoint with valid quote ID and customer JWT to create an order and with nonexistent quote ID to receive a 404 not found error."
+  },
+  {
+    "id": "TC010",
+    "title": "get orders and complete order with authorization checks",
+    "description": "Test the GET /orders/:orderId endpoint with authorized user JWT to retrieve order details and with unauthorized JWT to receive 403 forbidden, and test POST /orders/:orderId/complete with proper authorization and dev flag to complete order and without to receive 403 forbidden."
+  }
+]

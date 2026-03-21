@@ -62,6 +62,7 @@ async function ensureDriverTables(db) {
   await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS lat DOUBLE PRECISION;`);
   await db.query(`ALTER TABLE drivers ADD COLUMN IF NOT EXISTS lng DOUBLE PRECISION;`);
   await db.query(`ALTER TABLE drivers ALTER COLUMN user_id DROP NOT NULL;`);
+  await db.query(`ALTER TABLE drivers ADD CONSTRAINT drivers_user_id_key UNIQUE (user_id);`).catch(() => {});
 
   await db.query(`CREATE INDEX IF NOT EXISTS idx_drivers_is_online ON drivers(is_online);`);
   await db.query(`CREATE INDEX IF NOT EXISTS idx_drivers_is_busy ON drivers(is_busy);`);

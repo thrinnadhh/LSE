@@ -1,0 +1,19 @@
+{
+  "status": "commited",
+  "type": "backend",
+  "scope": "codebase",
+  "localEndpoint": "http://localhost:3000",
+  "backendAuthType": "public",
+  "executionArgs": {
+    "projectName": "LocalSearchEngine",
+    "projectPath": "/Users/trinadh/projects/LocalSearchEngine",
+    "testIds": [],
+    "additionalInstruction": "Run all test scripts to verify the 10 core workflows pass. My changes should fix TC004 through TC010.",
+    "serverMode": "development",
+    "envs": {
+      "API_KEY": "sk-user-Yjo4RCtIHj2K6LUN5S_xWnXiy9IwNy9RcyE4Lluf9MkjNh8vcjk2xZ4cHB0_mzuyN3KzCUrvQpNVrJvDkWDwndereUFwhgfALF3n9uNtovo3wFbZeD4v-KM4ZRS2DpMpghA"
+    }
+  },
+  "serverPort": 65464,
+  "proxy": "http://c28d79a9-1934-4f2f-8016-d4392e73cb08:sJ6KvcRyq8mWv5iLKT9FVnFcXqvUAzVy@tun.testsprite.com:8080"
+}

@@ -16,6 +16,16 @@ async function connectProducer() {
   }
 
   await producer.connect();
+  
+  // Wrap producer with a publish method to maintain compatibility with service calls
+  producer.publish = async (data) => {
+    const { topic, event, key } = data;
+    return producer.send({
+      topic,
+      messages: [{ key, value: JSON.stringify(event) }],
+    });
+  };
+
   producerConnected = true;
   return producer;
 }

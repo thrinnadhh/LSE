@@ -1,0 +1,146 @@
+version: "2"
+type: backend
+tech_stack:
+  - Node.js
+  - Express
+  - PostgreSQL
+  - Redis
+  - Kafka
+  - OpenSearch
+features:
+  - name: Auth Service
+    description: Identity and session management using OTP and JWT
+    files:
+      - repo/services/auth-service/src/auth-service.js
+      - repo/services/auth-service/src/routes.js
+    endpoints:
+      - method: POST
+        path: /auth/send-otp
+        description: Generate and send OTP to phone
+        auth_required: false
+        request_schema:
+          body:
+            phone: string
+      - method: POST
+        path: /auth/verify-otp
+        description: Verify OTP and return access token
+        auth_required: false
+        request_schema:
+          body:
+            phone: string
+            otp: string
+            role: string (optional)
+  - name: Shop Service
+    description: Shop registration and management
+    files:
+      - repo/services/shop-service/src/shop-service.js
+      - repo/services/shop-service/src/routes.js
+    endpoints:
+      - method: POST
+        path: /shops
+        description: Create a new shop
+        auth_required: true
+        request_schema:
+          body:
+            name: string
+            description: string (optional)
+            category: string (grocery|pet_store|electronics|furniture|salon|doctor|restaurant) (optional)
+            phone: string
+            lat: number
+            lng: number
+      - method: GET
+        path: /shops/:id
+        description: Get shop details
+        auth_required: false
+      - method: GET
+        path: /shops/dashboard
+        description: Get shop owner dashboard metrics
+        auth_required: true
+  - name: Product Service
+    description: Product catalog management
+    files:
+      - repo/services/product-service/src/product-service.js
+      - repo/services/product-service/src/routes.js
+    endpoints:
+      - method: POST
+        path: /products
+        description: Add a new product to a shop
+        auth_required: true
+        request_schema:
+          body:
+            name: string
+            description: string (optional)
+            price: number
+            originalPrice: number (optional)
+            category: string (optional)
+            subcategory: string (optional)
+            brand: string (optional)
+            productType: string (optional)
+            shopId: string (optional)
+  - name: Search Service
+    description: Location-aware shop and product discovery
+    files:
+      - repo/services/search-service/src/search-service.js
+      - repo/services/search-service/src/routes.js
+    endpoints:
+      - method: GET
+        path: /search/shops
+        description: Search for nearby shops by keyword
+        auth_required: false
+        query_params:
+          q: string
+          lat: number
+          lng: number
+          radius: number (optional)
+  - name: Chat Service
+    description: Real-time messaging and quote management
+    files:
+      - repo/services/chat-service/src/chat-service.js
+      - repo/services/chat-service/src/routes.js
+    endpoints:
+      - method: POST
+        path: /chat/conversations
+        description: Create/get conversation between customer and shop
+        auth_required: true
+        request_schema:
+          body:
+            shopId: string
+      - method: POST
+        path: /chat/quotes
+        description: Shop owner creates a quote for a conversation
+        auth_required: true
+        request_schema:
+          body:
+            conversationId: string
+            items: array of { productId: string, quantity: number, price: number }
+            notes: string (optional)
+            expiryMinutes: number (optional)
+      - method: POST
+        path: /chat/quotes/:quoteId/accept
+        description: Customer accepts a quote and creates an order
+        auth_required: true
+  - name: Order Service
+    description: Order lifecycle and delivery management
+    files:
+      - repo/services/order-service/src/order-service.js
+      - repo/services/order-service/src/routes.js
+    endpoints:
+      - method: GET
+        path: /orders/:orderId
+        description: Get order details and status
+        auth_required: true
+      - method: POST
+        path: /orders/:orderId/complete
+        description: Manually complete an order (dev/test only)
+        auth_required: true
+  - name: Home Service
+    description: Personalized home screen content
+    files:
+      - repo/services/home-service/src/home-service.js
+      - repo/services/home-service/src/routes.js
+    endpoints:
+      - method: GET
+        path: /home
+        description: Get personalized home feed
+        auth_required: true
+known_limitations: []
