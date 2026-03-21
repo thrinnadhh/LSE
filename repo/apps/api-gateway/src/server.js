@@ -94,13 +94,12 @@ async function start() {
   app.use("/home", authMiddleware, createHomeRouter({ db: pool }));
   app.use("/", createOrderRouter({ db: pool, redis, kafkaProducer }));
   console.log("Home route mounted");
-  app.use(
-    "/chat",
-    createChatRouter({
-      db: pool,
-      onMessagePersisted: chatRealtime.publishChatMessage,
-    })
-  );
+  const chatRouter = createChatRouter({
+    db: pool,
+    onMessagePersisted: chatRealtime.publishChatMessage,
+  });
+  app.use("/chat", chatRouter);
+  app.use("/", chatRouter);
   app.use(errorHandler);
 
   server.listen(config.port, () => {

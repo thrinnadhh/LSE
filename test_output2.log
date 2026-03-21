@@ -1,0 +1,71 @@
+Starting tests...
+1. auth: PASS
+2. otpFallback: PASS
+3. home: PASS
+OWNER TOKEN PARSED: {
+  sub: '171959b9-556e-4d53-b2ff-f551726396da',
+  phone: '+10000000001',
+  role: 'shop_owner',
+  tokenType: 'access',
+  iat: 1774080074,
+  exp: 1774080974
+}
+4. shopSetup: PASS
+5. products: PASS
+6. search: PASS
+7. searchFallback: PASS
+8. conversation: PASS
+QUOTE CREATION failed: 400 { error: 'Expected number, received nan' }
+9. quote: FAIL
+10. quoteAccept: FAIL
+11. orderFetch: FAIL
+12. orderLifecycle: FAIL
+13. devFallbackCompletion: FAIL
+REPEAT TRACKING failed: 200 {
+  hasShop: true,
+  totalOrders: 0,
+  revenue: 0,
+  repeatCustomers: 0,
+  topProducts: []
+}
+14. repeatTracking: FAIL
+Personalization failed. recommended length: 20 regularShops length: 10
+15. personalization: FAIL
+FAVORITES FLOW ADD STATUS: 404
+16. favorites: FAIL
+DASHBOARD failed: 200 {
+  hasShop: true,
+  totalOrders: 0,
+  revenue: 0,
+  repeatCustomers: 0,
+  topProducts: []
+}
+17. dashboard: FAIL
+18. edgeCases: PASS
+19. redisResilience: PASS
+20. performance: PASS
+
+
+FINAL OUTPUT JSON:
+{
+  "auth": "PASS",
+  "otpFallback": "PASS",
+  "home": "PASS",
+  "shopSetup": "PASS",
+  "products": "PASS",
+  "search": "PASS",
+  "searchFallback": "PASS",
+  "conversation": "PASS",
+  "quote": "FAIL",
+  "quoteAccept": "FAIL",
+  "orderFetch": "FAIL",
+  "orderLifecycle": "FAIL",
+  "repeatTracking": "FAIL",
+  "personalization": "FAIL",
+  "favorites": "FAIL",
+  "dashboard": "FAIL",
+  "edgeCases": "PASS",
+  "redisResilience": "PASS",
+  "performance": "PASS",
+  "overall": "FAIL"
+}
