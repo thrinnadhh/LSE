@@ -12,6 +12,10 @@ const regularShopsQuerySchema = z.object({
   limit: z.coerce.number().int().positive().max(50).optional(),
 });
 
+const preferencesQuerySchema = z.object({
+  limit: z.coerce.number().int().positive().max(50).optional(),
+});
+
 function requireAuth(req, _res, next) {
   const authHeader = req.headers.authorization || "";
   const token = authHeader.startsWith("Bearer ") ? authHeader.slice(7) : null;
@@ -106,6 +110,27 @@ function createUserRouter({ db }) {
         const query = regularShopsQuerySchema.parse(req.query);
         const items = await userService.listRegularShops({
           userId,
+          limit: query.limit,
+          db,
+        });
+        res.status(200).json({ items });
+      } catch (err) {
+        if (err instanceof z.ZodError) {
+          throw new ApiError(400, err.issues[0].message);
+        }
+        throw err;
+      }
+    })
+  );
+
+  router.get(
+    "/preferences",
+    requireAuth,
+    asyncHandler(async (req, res) => {
+      try {
+        const query = preferencesQuerySchema.parse(req.query);
+        const items = await userService.listUserPreferences({
+          userId: req.auth.sub,
           limit: query.limit,
           db,
         });

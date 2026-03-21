@@ -19,6 +19,22 @@ async function trackEvent(db, userId, eventType, entityId = null, metadata = {})
   }
 }
 
+async function recordAnalyticsEvent(db, { type, value, userId = null, productId = null }) {
+  if (!type || !value) return;
+
+  try {
+    await db.query(
+      `
+        INSERT INTO analytics_events (type, value, user_id, product_id)
+        VALUES ($1, $2, $3, $4)
+      `,
+      [type, String(value), userId || null, productId || null]
+    );
+  } catch (err) {
+    console.error("[analytics] Failed to record event:", err.message);
+  }
+}
+
 async function getUserSearchPreferences(db, userId, limit = 3) {
   try {
     const result = await db.query(`
@@ -122,6 +138,7 @@ async function markNotificationAsRead(db, notificationId, userId) {
 
 module.exports = {
   trackEvent,
+  recordAnalyticsEvent,
   getUserSearchPreferences,
   getRecentOrders,
   createNotification,

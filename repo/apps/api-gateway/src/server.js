@@ -68,6 +68,9 @@ app.get("/health", (_req, res) => {
 async function start() {
   await ensureBaseTables();
   await ensureAuthTables();
+  await ensureTrackingTables();
+  console.log("User preference engine active");
+  console.log("Behavior tracking enabled");
   await ensureShopTables(pool);
   await ensureProductTables(pool);
   await ensureUserCommerceTables(pool);
