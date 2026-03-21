@@ -744,6 +744,9 @@ async function ensureShopOwnerForOrder({ orderId, authUserId, db }) {
 }
 
 async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, fromStatus, toStatus, actor, isDev = false }) {
+  if (process.env.NODE_ENV !== "production" && isDev) {
+    // In dev mode, we allow the requested status transition even if not following the normal flow
+  }
   const allowDevManualCompletion = process.env.NODE_ENV !== "production" && actor === "driver" && toStatus === "DELIVERED";
   const role = normalizeRole(auth.role);
   let driverProfileId = null;
@@ -848,7 +851,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
 
     if (current.status !== fromStatus) {
       const canBypassInDev =
-        allowDevManualCompletion
+        (allowDevManualCompletion || isDev)
         && ["CREATED", "CONFIRMED", "ASSIGNED", "PICKED_UP", "DELIVERING"].includes(current.status);
 
       if (!canBypassInDev) {
@@ -866,25 +869,27 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
         const forcedResult = await db.query(
           `
             UPDATE orders
-            SET status = 'DELIVERED',
+            SET status = $3,
                 driver_id = COALESCE(driver_id, $2),
                 updated_at = NOW()
             WHERE id = $1
             RETURNING driver_id
           `,
-          [orderId, driverProfileId]
+          [orderId, driverProfileId, toStatus]
         );
 
-        transitionStatus = "DELIVERED";
+        transitionStatus = toStatus;
         const effectiveDriverId = forcedResult.rows[0]?.driver_id || current.driver_id;
 
-        console.log("Forced DELIVERED for order:", orderId);
-        console.log("DELIVERED reached -> updating stats");
-        await recordShopCustomerCompletion({
-          db,
-          shopId: current.shop_id,
-          customerId: current.customer_id,
-        });
+        console.log(`Forced ${toStatus} for order:`, orderId);
+        if (toStatus === "DELIVERED") {
+          console.log("DELIVERED reached -> updating stats");
+          await recordShopCustomerCompletion({
+            db,
+            shopId: current.shop_id,
+            customerId: current.customer_id,
+          });
+        }
 
         if (effectiveDriverId) {
           driverIdForRelease = effectiveDriverId;
