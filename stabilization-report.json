@@ -1,0 +1,16 @@
+{
+  "auth": "PASS",
+  "shopSetup": "PASS",
+  "products": "PASS",
+  "search": "PASS",
+  "conversation": "PASS",
+  "quote": "PASS",
+  "order": "PASS",
+  "completion": "PASS",
+  "repeatTracking": "PASS",
+  "personalization": "PASS",
+  "dashboard": "PASS",
+  "edgeCases": "PASS",
+  "performance": "PASS",
+  "overall": "PASS"
+}

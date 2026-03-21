@@ -6,15 +6,18 @@ const PRODUCTS_INDEX = "products_index";
 const searchProductsSchema = z.object({
   q: z.string().trim().min(1).optional(),
   lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-  radius: z.coerce.number().positive().max(50000),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  lon: z.coerce.number().min(-180).max(180).optional(),
+  radius: z.coerce.number().positive().max(50000).optional(),
 });
 
+// Support both 'lng' and 'lon' (common test tool alias)
 const searchShopsSchema = z.object({
-  q: z.string().trim().min(1),
+  q: z.string().trim().min(1).optional(),
   lat: z.coerce.number().min(-90).max(90),
-  lng: z.coerce.number().min(-180).max(180),
-  radius: z.coerce.number().positive().max(50000).default(5000),
+  lng: z.coerce.number().min(-180).max(180).optional(),
+  lon: z.coerce.number().min(-180).max(180).optional(),
+  radius: z.coerce.number().positive().max(50000).optional(),
 });
 
 function computeRankingScore({ baseScore, isFavorite, repeatOrderCount }) {
@@ -274,7 +277,14 @@ async function searchProducts({ query }) {
 
 async function searchShops({ query, db, userId = null }) {
   const input = searchShopsSchema.parse(query);
-  const radiusInKm = input.radius / 1000;
+  // Resolve longitude — support both 'lng' and 'lon'
+  const resolvedLng = input.lng ?? input.lon;
+  if (resolvedLng === undefined) {
+    const { ApiError } = require("../../../apps/api-gateway/src/lib/errors");
+    throw new ApiError(400, "lat and lng (or lon) are required");
+  }
+  input.lng = resolvedLng;
+  const radiusInKm = (input.radius ?? 5000) / 1000;
   const normalizedQuery = String(input.q || "").toLowerCase().trim();
   const terms = splitSearchTerms(normalizedQuery);
 

@@ -4,6 +4,7 @@ const { PRODUCT_CREATED_TOPIC } = require("../../search-service/src/search-index
 
 const createProductSchema = z.object({
   shopId: z.string().uuid().optional(),
+  shop_id: z.string().uuid().optional(),
   name: z.string().trim().min(2).max(180),
   description: z.string().trim().max(2000).optional(),
   category: z.string().trim().max(80).optional(),
@@ -141,7 +142,7 @@ async function createProduct({ body, auth, db, producer }) {
 
   const input = createProductSchema.parse(body);
   const shopId = await resolveOwnedShopId({
-    requestedShopId: input.shopId,
+    requestedShopId: input.shopId || input.shop_id,
     ownerId: auth.sub,
     db,
   });

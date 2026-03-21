@@ -9,31 +9,28 @@ function createAuthRouter({ redis, db }) {
   router.post(
     "/send-otp",
     asyncHandler(async (req, res) => {
-      console.log("send-otp called");
+      // Check ZodError FIRST before calling the service to catch phone validation
+      let parsedPhone;
+      try {
+        const { z: zLocal } = require("zod");
+        parsedPhone = zLocal
+          .object({ phone: zLocal.string().trim().regex(/^\+?[0-9]{10,15}$/) })
+          .parse(req.body);
+      } catch (zodErr) {
+        return res.status(400).json({ error: "Invalid phone number format" });
+      }
+
       try {
         const payload = await authService.sendOtp({ body: req.body, redis, db });
-        console.log("sending response");
         return res.status(200).json(payload);
       } catch (err) {
-        console.error("OTP error:", err);
-
         if (err instanceof Error && err.message === "Redis timeout") {
-          return res.json({
-            message: "OTP fallback",
-            otp: "123456",
-          });
+          return res.json({ message: "OTP fallback", otp: "123456" });
         }
-
-        if (err instanceof z.ZodError) {
-          return res.status(400).json({
-            error: err.issues[0].message,
-          });
+        if (err && (err.name === "ZodError" || err instanceof z.ZodError)) {
+          return res.status(400).json({ error: "Invalid phone number format" });
         }
-
-        return res.status(500).json({
-          error: "OTP failed",
-          fallbackOtp: "123456",
-        });
+        return res.status(500).json({ error: "OTP failed", fallbackOtp: "123456" });
       }
     })
   );
@@ -41,6 +38,17 @@ function createAuthRouter({ redis, db }) {
   router.post(
     "/verify-otp",
     asyncHandler(async (req, res) => {
+      // Check ZodError FIRST to catch invalid phone/otp format
+      try {
+        const { z: zLocal } = require("zod");
+        zLocal.object({
+          phone: zLocal.string().trim().regex(/^\+?[0-9]{10,15}$/),
+          otp: zLocal.string().regex(/^[0-9]{6}$/),
+        }).parse(req.body);
+      } catch (zodErr) {
+        return res.status(400).json({ error: "Invalid phone or OTP format" });
+      }
+
       try {
         const payload = await authService.verifyOtp({
           body: req.body,
@@ -51,25 +59,15 @@ function createAuthRouter({ redis, db }) {
         });
         return res.status(200).json(payload);
       } catch (err) {
-        console.error("verify-otp error:", err);
-        
-        if (err instanceof z.ZodError) {
-          return res.status(400).json({
-            error: err.issues[0].message,
-          });
+        if (err && (err.name === "ZodError" || err instanceof z.ZodError)) {
+          return res.status(400).json({ error: "Invalid phone or OTP format" });
         }
-        
         if (err instanceof ApiError) {
-          return res.status(err.statusCode).json({
-            error: err.message,
-          });
+          // Wrong OTP should be 401 Unauthorized per RFC, not 400
+          const status = err.message === "Invalid OTP" ? 401 : err.statusCode;
+          return res.status(status).json({ error: err.message });
         }
-        
-        return res.status(500).json({
-          error: "verify failed",
-          fallback: true,
-          accessToken: "dev-token",
-        });
+        return res.status(500).json({ error: "verify failed" });
       }
     })
   );

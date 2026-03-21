@@ -384,6 +384,20 @@ async function ensureOrderTables(db) {
     );
   `);
 
+  // 6. shop_customer_stats
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS shop_customer_stats (
+      shop_id UUID NOT NULL REFERENCES shops(id) ON DELETE CASCADE,
+      user_id UUID NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      customer_id UUID,
+      order_count INTEGER DEFAULT 0,
+      last_order_at TIMESTAMPTZ,
+      UNIQUE(shop_id, user_id)
+    );
+  `);
+  await db.query(`ALTER TABLE shop_customer_stats ADD COLUMN IF NOT EXISTS customer_id UUID;`).catch(() => {});
+  await db.query(`CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_customer_unique ON shop_customer_stats (shop_id, customer_id);`).catch(() => {});
+
   // Migrations / Alters
   await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS driver_id UUID REFERENCES drivers(id);`).catch(() => {});
   await db.query(`ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivery_address_id UUID REFERENCES user_addresses(id);`).catch(() => {});
@@ -438,28 +452,6 @@ async function recordShopCustomerCompletion({ db, shopId, customerId }) {
   if (!shopId || !customerId) {
     return;
   }
-
-  await db.query(
-    `
-      ALTER TABLE shop_customer_stats
-      ADD COLUMN IF NOT EXISTS customer_id UUID
-    `
-  );
-
-  await db.query(
-    `
-      UPDATE shop_customer_stats
-      SET customer_id = user_id
-      WHERE customer_id IS NULL
-    `
-  );
-
-  await db.query(
-    `
-      CREATE UNIQUE INDEX IF NOT EXISTS idx_shop_customer_unique
-      ON shop_customer_stats (shop_id, customer_id)
-    `
-  );
 
   await db.query(
     `

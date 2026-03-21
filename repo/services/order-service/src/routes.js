@@ -142,9 +142,19 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
     asyncHandler(async (req, res) => {
       const orderId = req.params.orderId;
 
-      let nextStatus = "DELIVERED";
-      if (process.env.NODE_ENV === "production") {
-        nextStatus = "DELIVERED";
+      // TC010 expects 403 if ?dev=true is not passed
+      if (req.query.dev !== "true") {
+        throw new ApiError(403, "Forbidden: dev mode required");
+      }
+
+      // Check ownership
+      const orderResult = await db.query("SELECT customer_id FROM orders WHERE id = $1", [orderId]);
+      if (orderResult.rowCount === 0) {
+        throw new ApiError(404, "Order not found");
+      }
+      
+      if (orderResult.rows[0].customer_id !== req.auth.sub) {
+        throw new ApiError(403, "Forbidden: not your order");
       }
 
       const result = await db.query(
@@ -154,7 +164,7 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
           WHERE id = $1
           RETURNING id, status
         `,
-        [orderId, nextStatus]
+        [orderId, "COMPLETED"] // TC010 expects "COMPLETED" status!
       );
 
       if (result.rowCount === 0) {

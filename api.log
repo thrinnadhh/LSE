@@ -1,0 +1,28 @@
+
+> local-search-engine@0.1.0 start:api
+> node repo/apps/api-gateway/src/server.js
+
+(node:83544) TimeoutNegativeWarning: -1774077568777 is a negative number.
+Timeout duration was set to 1.
+(Use `node --trace-warnings ...` to show where the warning was created)
+Home route mounted
+api-gateway listening on port 3000
+GET /
+POST /auth/send-otp
+before redis
+after redis
+[sendOtp] Database insert completed
+POST /auth/verify-otp
+verify-otp start
+before otp validation
+[verifyOtp] Bypass code 123456 used
+after otp validation 123456
+before user lookup
+after user lookup
+before token generation
+after token generation
+before response
+POST /shops
+POST /products
+POST /products
+GET /search/shops?q=bakery&lat=12.9716&lon=77.5946

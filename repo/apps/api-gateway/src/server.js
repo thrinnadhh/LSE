@@ -95,7 +95,7 @@ async function start() {
   app.use("/", createOrderRouter({ db: pool, redis, kafkaProducer }));
   console.log("Home route mounted");
   app.use(
-    "/",
+    "/chat",
     createChatRouter({
       db: pool,
       onMessagePersisted: chatRealtime.publishChatMessage,
