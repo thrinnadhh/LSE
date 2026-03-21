@@ -292,6 +292,17 @@ async function searchShops({ query, db, userId = null }) {
     return fallbackSearch({ db, lat: input.lat, lng: input.lng, limit: 20 });
   }
 
+  const fastFallbackResults = await fallbackSearchByTerms({
+    db,
+    lat: input.lat,
+    lng: input.lng,
+    terms,
+    limit: 20,
+  });
+  if (fastFallbackResults.length > 0) {
+    return fastFallbackResults;
+  }
+
   // Track search event for personalization
   if (userId) {
     try {
