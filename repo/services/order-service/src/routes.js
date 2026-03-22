@@ -20,6 +20,7 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
           body: req.body,
           auth: req.auth,
           db,
+          traceId: req.traceId,
         });
         res.status(201).json(payload);
       } catch (err) {
@@ -56,6 +57,7 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
           db,
           redis,
           kafkaProducer,
+          traceId: req.traceId,
         });
         res.status(200).json(payload);
       } catch (err) {
@@ -115,6 +117,7 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
         toStatus: "PICKED_UP",
         actor: "driver",
         isDev,
+        traceId: req.traceId,
       });
       res.status(200).json(payload);
     })
@@ -135,6 +138,7 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
         toStatus: "DELIVERING",
         actor: "driver",
         isDev,
+        traceId: req.traceId,
       });
       res.status(200).json(payload);
     })
@@ -171,6 +175,7 @@ function createOrderRouter({ db, redis, kafkaProducer }) {
         toStatus: "DELIVERED",
         actor: "driver",
         isDev: true,
+        traceId: req.traceId,
       });
 
       res.status(200).json(payload);

@@ -1,0 +1,17 @@
+[
+  {
+    "event": "product.created.v1",
+    "topic": "product-events",
+    "source": "product-service",
+    "fields": [
+      "traceId",
+      "version",
+      "productId",
+      "shopId",
+      "productName",
+      "category",
+      "price",
+      "timestamp"
+    ]
+  }
+]

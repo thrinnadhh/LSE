@@ -135,7 +135,7 @@ async function resolveOwnedShopId({ requestedShopId, ownerId, db }) {
   return ownedShops.rows[0].id;
 }
 
-async function createProduct({ body, auth, db, producer }) {
+async function createProduct({ body, auth, db, producer, traceId }) {
   console.log("createProduct auth object:", JSON.stringify(auth));
   if (normalizeRole(auth.role) !== "shop_owner") {
     throw new ApiError(403, "Only shop_owner can create products");
@@ -191,6 +191,7 @@ async function createProduct({ body, auth, db, producer }) {
           category: product.category,
           price: Number(product.price),
         }),
+        headers: traceId ? { traceId, version: "1.0" } : { version: "1.0" },
       },
     ],
   });

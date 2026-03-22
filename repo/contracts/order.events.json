@@ -1,0 +1,29 @@
+[
+  {
+    "event": "order.created.v1",
+    "topic": "order-events",
+    "source": "order-service",
+    "fields": [
+      "traceId",
+      "version",
+      "orderId",
+      "customerId",
+      "shopId",
+      "items",
+      "totalAmount",
+      "timestamp"
+    ]
+  },
+  {
+    "event": "order.status_changed.v1",
+    "topic": "order-events",
+    "source": "order-service",
+    "fields": [
+      "traceId",
+      "version",
+      "orderId",
+      "status",
+      "timestamp"
+    ]
+  }
+]

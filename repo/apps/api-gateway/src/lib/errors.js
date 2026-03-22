@@ -1,3 +1,5 @@
+const logger = require("../../../../src/logger");
+
 class ApiError extends Error {
   constructor(statusCode, message) {
     super(message);
@@ -18,7 +20,13 @@ function errorHandler(err, _req, res, _next) {
     });
   }
 
-  console.error("unhandled error", err);
+  logger.error({
+    traceId: _req.traceId,
+    event: "http.unhandled_error",
+    error: err.message,
+    stack: err.stack,
+  });
+
   return res.status(500).json({
     error: "Internal server error",
   });

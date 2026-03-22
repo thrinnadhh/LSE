@@ -92,64 +92,129 @@ async function getRegularShops({ userId, db, limit = 10 }) {
 }
 
 async function getRecommendedShops({ userId, userLat, userLng, db, limit = 20 }) {
-  const result = await db.query(
-    `
-      SELECT
-        s.id,
-        s.name,
-        s.category,
-        COALESCE(s.rating_avg, 0) AS rating,
-        COALESCE(up.score, 0) AS preference_score,
-        COALESCE(scs.order_count, 0) AS repeat_order_score,
-        ST_Distance(
-          COALESCE(sl.location, s.location),
-          ST_SetSRID(ST_Point($3, $2), 4326)::geography
-        ) AS distance_meters
-      FROM shops s
-      LEFT JOIN shop_locations sl ON sl.shop_id = s.id
-      LEFT JOIN user_preferences up
-        ON up.shop_id = s.id AND up.user_id = $4
-      LEFT JOIN shop_customer_stats scs
-        ON scs.shop_id = s.id AND scs.customer_id = $4
-      WHERE COALESCE(s.is_active, TRUE) = TRUE
-        AND ST_DWithin(
-          COALESCE(sl.location, s.location),
-          ST_SetSRID(ST_Point($3, $2), 4326)::geography,
-          5000
-        )
-      ORDER BY distance_meters ASC
-      LIMIT $1
-    `,
-    [limit * 2, userLat, userLng, userId]
-  );
+  // STEP 1 — FETCH DATA
+  const [shopsResult, prefsResult, repeatsResult] = await Promise.all([
+    db.query(
+      `
+        SELECT DISTINCT ON (s.id)
+          s.id,
+          s.name,
+          s.category,
+          COALESCE(s.rating_avg, 0) AS rating,
+          COALESCE(scs.order_count, 0) AS total_orders,
+          scs.last_order_at,
+          ST_Distance(
+            COALESCE(sl.location, s.location),
+            ST_SetSRID(ST_Point($3, $2), 4326)::geography
+          ) AS distance_meters
+        FROM shops s
+        LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+        LEFT JOIN shop_customer_stats scs
+          ON scs.shop_id = s.id AND scs.customer_id = $4
+        WHERE COALESCE(s.is_active, TRUE) = TRUE
+          AND ST_DWithin(
+            COALESCE(sl.location, s.location),
+            ST_SetSRID(ST_Point($3, $2), 4326)::geography,
+            5000
+          )
+        ORDER BY s.id, distance_meters ASC
+        LIMIT $1
+      `,
+      [limit * 2, userLat, userLng, userId]
+    ),
+    db.query(
+      `
+        SELECT shop_id, score
+        FROM user_preferences
+        WHERE user_id = $1
+      `,
+      [userId]
+    ),
+    db.query(
+      `
+        SELECT shop_id, order_count, last_order_at
+        FROM shop_customer_stats
+        WHERE customer_id = $1
+      `,
+      [userId]
+    ),
+  ]);
 
-  const recommended = result.rows
-    .map((row) => {
-      const distance = Math.round(Number(row.distance_meters || 0));
-      const score = computeRecommendationScore({
-        preferenceScore: row.preference_score,
-        repeatOrderScore: row.repeat_order_score,
-        rating: Number(row.rating || 0),
-        distanceMeters: row.distance_meters,
-      });
-
-      return {
-        shopId: row.id,
-        name: row.name,
-        category: row.category,
-        rating: Number(row.rating || 0),
-        deliveryTag: getDeliveryTag(distance),
-        score,
-      };
-    })
-    .sort((a, b) => b.score - a.score)
-    .slice(0, limit);
-
-  if (recommended.length === 0) {
+  // STEP 5 — FALLBACK if no user data
+  if (prefsResult.rowCount === 0 && repeatsResult.rowCount === 0) {
     return getPopularShops({ db, limit });
   }
 
-  return recommended;
+  // STEP 2 — BUILD MAPS
+  const prefMap = new Map();
+  prefsResult.rows.forEach((row) => prefMap.set(row.shop_id, Number(row.score || 0)));
+
+  const repeatMap = new Map();
+  repeatsResult.rows.forEach((row) => repeatMap.set(row.shop_id, {
+    count: Number(row.order_count || 0),
+    lastOrderAt: row.last_order_at,
+  }));
+
+  // STEP 3 — COMPUTE SCORE
+  const shops = shopsResult.rows.map((row) => {
+    const preferenceScore = prefMap.get(row.id) || 0;
+    const repeatInfo = repeatMap.get(row.id) || { count: row.total_orders || 0, lastOrderAt: row.last_order_at };
+    const repeatScore = repeatInfo.count || 0;
+
+    const distanceKm = Number.isFinite(row.distance_meters) ? Number(row.distance_meters) / 1000 : null;
+    const distanceScore = distanceKm === null ? 0 : 1 / (distanceKm + 1);
+
+    const popularityScore = Number(row.total_orders || 0) || 1;
+
+    const recencyScore = repeatInfo.lastOrderAt
+      ? Math.max(0, 1 - (Date.now() - new Date(repeatInfo.lastOrderAt).getTime()) / (7 * 86400000))
+      : 0;
+
+    const explorationBoost = Math.random() * 0.5;
+
+    const score =
+      preferenceScore * 3 +
+      repeatScore * 2 +
+      distanceScore * 3 +
+      popularityScore * 1.5 +
+      recencyScore * 2 +
+      explorationBoost;
+
+    const distanceMeters = Number(row.distance_meters || 0);
+
+    return {
+      shopId: row.id,
+      name: row.name,
+      category: row.category,
+      rating: Number(row.rating || 0),
+      deliveryTag: getDeliveryTag(Math.round(distanceMeters)),
+      score,
+      distanceKm,
+      lastOrderAt: repeatInfo.lastOrderAt || row.last_order_at || null,
+      totalOrders: repeatInfo.count || Number(row.total_orders || 0),
+    };
+  });
+
+  // STEP 4 — SORT
+  shops.sort((a, b) => b.score - a.score);
+
+  // STEP 4.5 — DEDUPE by shopId while preserving highest score first
+  const uniqueShops = new Map();
+  for (const shop of shops) {
+    if (!uniqueShops.has(shop.shopId)) {
+      uniqueShops.set(shop.shopId, shop);
+    }
+  }
+  const deduped = Array.from(uniqueShops.values());
+
+  // STEP 6 — LOG (IMPORTANT)
+  console.log("Top ranked shops:", deduped.slice(0, 3));
+
+  if (deduped.length === 0) {
+    return getPopularShops({ db, limit });
+  }
+
+  return deduped.slice(0, limit);
 }
 
 async function getPopularShops({ db, limit = 10 }) {

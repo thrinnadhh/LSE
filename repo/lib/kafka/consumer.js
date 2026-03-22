@@ -1,4 +1,5 @@
 const { Kafka, logLevel } = require("kafkajs");
+const logger = require("../../../../src/logger");
 
 function parseBrokers(brokers) {
   const source =
@@ -99,8 +100,17 @@ function createKafkaConsumer({
           let event;
           try {
             event = JSON.parse(message.value.toString());
+            if (message.headers) {
+              if (message.headers.traceId) {
+                event.traceId = message.headers.traceId.toString();
+              }
+              if (message.headers.version) {
+                event.version = message.headers.version.toString();
+              }
+            }
           } catch (err) {
-            console.error("kafka consumer parse failed", {
+            logger.error({
+              event: "kafka.consumer.parse_failed",
               topic: batch.topic,
               partition: batch.partition,
               offset: message.offset,
@@ -115,11 +125,13 @@ function createKafkaConsumer({
               retryDelayMs,
             });
           } catch (err) {
-            console.error("kafka consumer processing failed", {
+            logger.error({
+              event: "kafka.consumer.processing_failed",
               topic: batch.topic,
               partition: batch.partition,
               offset: message.offset,
-              eventType: event.eventType,
+              eventType: event?.eventType,
+              traceId: event?.traceId,
               error: err.message,
             });
           }
@@ -128,7 +140,7 @@ function createKafkaConsumer({
         }
       },
     }).catch((err) => {
-      console.error("kafka consumer run failed", { groupId, error: err.message });
+      logger.error({ event: "kafka.consumer.run_failed", groupId, error: err.message });
       running = false;
     });
   }

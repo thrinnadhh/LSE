@@ -128,13 +128,14 @@ async function scheduleRetry({ redis, orderId, attempts }) {
   }, DISPATCH_RETRY_DELAY_MS);
 }
 
-async function publishOrderCreated({ producer, orderId }) {
+async function publishOrderCreated({ producer, orderId, traceId }) {
   await producer.send({
     topic: ORDER_CREATED_TOPIC,
     messages: [
       {
         key: orderId,
         value: JSON.stringify({ orderId, createdAt: new Date().toISOString() }),
+        headers: traceId ? { traceId, version: "1.0" } : { version: "1.0" },
       },
     ],
   });

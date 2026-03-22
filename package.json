@@ -13,12 +13,18 @@
     "docker:reset": "docker compose -f artifacts/infra/docker/docker-compose.dev.yml down -v && docker compose -f artifacts/infra/docker/docker-compose.dev.yml up -d"
   },
   "dependencies": {
+    "@opentelemetry/api": "^1.9.0",
+    "@opentelemetry/auto-instrumentations-node": "^0.71.0",
+    "@opentelemetry/exporter-jaeger": "^2.6.0",
+    "@opentelemetry/resources": "^2.6.0",
+    "@opentelemetry/sdk-node": "^0.213.0",
+    "@opentelemetry/semantic-conventions": "^1.40.0",
     "express": "^4.21.2",
-    "kafkajs": "^2.2.4",
     "ioredis": "^5.4.2",
     "jsonwebtoken": "^9.0.2",
     "kafkajs": "^2.2.4",
     "pg": "^8.13.1",
+    "pino": "^10.3.1",
     "ws": "^8.19.0",
     "zod": "^3.24.1"
   }

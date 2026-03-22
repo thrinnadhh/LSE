@@ -78,12 +78,17 @@ function createKafkaProducer({
     connected = false;
   }
 
-  async function publish({ topic, event, key }) {
+  async function publish({ topic, event, key, traceId, version = "1.0" }) {
     if (!topic || !event) {
       return;
     }
 
     await connect();
+
+    const headers = { version };
+    if (traceId) {
+      headers.traceId = traceId;
+    }
 
     await withRetries(
       () =>
@@ -95,6 +100,7 @@ function createKafkaProducer({
             {
               key: key || event?.payload?.orderId || event?.payload?.driverId || event.eventId,
               value: JSON.stringify(event),
+              headers,
             },
           ],
         }),
@@ -105,12 +111,17 @@ function createKafkaProducer({
     );
   }
 
-  async function publishBatch({ topic, events, keySelector }) {
+  async function publishBatch({ topic, events, keySelector, traceId, version = "1.0" }) {
     if (!topic || !Array.isArray(events) || events.length === 0) {
       return;
     }
 
     await connect();
+
+    const headers = { version };
+    if (traceId) {
+      headers.traceId = traceId;
+    }
 
     for (let index = 0; index < events.length; index += maxBatchSize) {
       const chunk = events.slice(index, index + maxBatchSize);
@@ -128,6 +139,7 @@ function createKafkaProducer({
                 event?.payload?.driverId ||
                 event.eventId,
               value: JSON.stringify(event),
+              headers,
             })),
           }),
         {

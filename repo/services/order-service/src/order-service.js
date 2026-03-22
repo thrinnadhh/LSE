@@ -33,6 +33,8 @@ const createOrderSchema = z.object({
   addressId: z.string().uuid().nullable().optional(),
 });
 
+const logger = require("../../../../src/logger");
+
 function normalizeRole(role) {
   return String(role || "").toLowerCase();
 }
@@ -126,7 +128,7 @@ async function resolveDeliveryAddressId({ db, customerId, requestedAddressId }) 
   return insertedAddress.rows[0].id;
 }
 
-async function createOrder({ body, auth, db }) {
+async function createOrder({ body, auth, db, traceId }) {
   const role = normalizeRole(auth.role);
   if (role !== "customer") {
     throw new ApiError(403, "Only customers can create orders");
@@ -210,7 +212,18 @@ async function createOrder({ body, auth, db }) {
     [effectiveShopId, auth.sub, deliveryAddressId, Number(subtotal.toFixed(2))]
   );
 
-  return mapOrder(created.rows[0], responseItems);
+  const mappedOrder = mapOrder(created.rows[0], responseItems);
+
+  logger.info({
+    traceId,
+    service: "order-service",
+    event: "order.created",
+    orderId: mappedOrder.id,
+    customerId: auth.sub,
+    shopId: effectiveShopId
+  });
+
+  return mappedOrder;
 }
 
 async function runRedisSideEffect(taskName, task, timeoutMs = 1500) {
@@ -222,7 +235,7 @@ async function runRedisSideEffect(taskName, task, timeoutMs = 1500) {
       }),
     ]);
   } catch (err) {
-    console.warn("redis side effect skipped", { taskName, error: err.message });
+    logger.warn({ event: "redis.side_effect_skipped", "redis side effect skipped", { taskName, error: err.message });
   }
 }
 
@@ -286,7 +299,7 @@ function toOrderStatusPayload(orderRow) {
   };
 }
 
-async function publishOrderStatusChangedEvent({ kafkaProducer, orderRow }) {
+async function publishOrderStatusChangedEvent({ kafkaProducer, orderRow, traceId }) {
   if (!kafkaProducer || !orderRow) {
     return;
   }
@@ -301,16 +314,17 @@ async function publishOrderStatusChangedEvent({ kafkaProducer, orderRow }) {
     topic: KAFKA_TOPICS.orderEvents,
     event,
     key: orderRow.id,
+    traceId,
   });
 }
 
-async function publishOrderStatusChangedById({ orderId, db, kafkaProducer }) {
+async function publishOrderStatusChangedById({ orderId, db, kafkaProducer, traceId }) {
   if (!orderId || !db || !kafkaProducer) {
     return;
   }
 
   const order = await getOrderRowOrThrow({ orderId, db });
-  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: order });
+  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: order, traceId });
 }
 
 async function ensureOrderTables(db) {
@@ -501,9 +515,9 @@ async function runDeliveredSideEffects({ db, order }) {
   if (!db || !order) return;
 
   try {
-    console.log("DELIVERED → stats update");
-    console.log("DELIVERED → preferences update");
-    console.log("DELIVERED → analytics logged");
+    logger.info({ event: "order.side_effect.stats" });
+    logger.info({ event: "order.side_effect.preferences" });
+    logger.info({ event: "order.side_effect.analytics" });
 
     await Promise.all([
       recordShopCustomerCompletion({ db, order }),
@@ -518,7 +532,7 @@ async function runDeliveredSideEffects({ db, order }) {
       customerId: order.customer_id,
     });
   } catch (err) {
-    console.error("Side effect failed", err);
+    logger.error({ event: "order.side_effect_failed", error: err.message });
   }
 }
 
@@ -528,7 +542,7 @@ async function recordOrderAnalytics({ db, orderId, shopId, customerId }) {
   try {
     await trackAnalyticsEvent(db, { type: "order", value: shopId, userId: customerId, productId: null });
   } catch (err) {
-    console.error("[order] Failed to record shop analytics:", err.message);
+    logger.error({ event: "order.shop_analytics_failed", error: err.message });
   }
 
   try {
@@ -551,7 +565,7 @@ async function recordOrderAnalytics({ db, orderId, shopId, customerId }) {
       });
     }
   } catch (err) {
-    console.error("[order] Failed to record product analytics:", err.message);
+    logger.error({ event: "order.product_analytics_failed", error: err.message });
   }
 }
 
@@ -606,7 +620,7 @@ async function getOrderById({ orderId, auth, db }) {
   };
 }
 
-async function assignDriver({ orderId, driverId, db, redis, kafkaProducer, requireAvailable = false }) {
+async function assignDriver({ orderId, driverId, db, redis, kafkaProducer, requireAvailable = false, traceId }) {
   await db.query("BEGIN");
   try {
     const order = await getOrderRowOrThrow({ orderId, db, forUpdate: true });
@@ -671,12 +685,12 @@ async function assignDriver({ orderId, driverId, db, redis, kafkaProducer, requi
   await publishOrderEvent({ redis, orderId, status: "ASSIGNED" });
 
   const updated = await getOrderRowOrThrow({ orderId, db });
-  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: updated });
+  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: updated, traceId });
   const items = await getOrderItems({ orderId, db });
   return mapOrder(updated, items);
 }
 
-async function assignDriverToOrder({ orderId, body, auth, db, redis, kafkaProducer }) {
+async function assignDriverToOrder({ orderId, body, auth, db, redis, kafkaProducer, traceId }) {
   const role = normalizeRole(auth.role);
   if (role !== "admin" && role !== "dispatch_service") {
     throw new ApiError(403, "Only admin or dispatch service can assign drivers");
@@ -691,6 +705,7 @@ async function assignDriverToOrder({ orderId, body, auth, db, redis, kafkaProduc
     redis,
     kafkaProducer,
     requireAvailable: false,
+    traceId,
   });
 }
 
@@ -805,7 +820,7 @@ async function ensureShopOwnerForOrder({ orderId, authUserId, db }) {
   }
 }
 
-async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, fromStatus, toStatus, actor, isDev = false }) {
+async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, fromStatus, toStatus, actor, isDev = false, traceId }) {
   if (process.env.NODE_ENV !== "production" && isDev) {
     // In dev mode, we allow the requested status transition even if not following the normal flow
   }
@@ -902,7 +917,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
     const current = await getOrderRowOrThrow({ orderId, db, forUpdate: true });
     let forcedBypassApplied = false;
 
-    console.info("order status transition", {
+    logger.info({ event: "order.status_transition", 
       orderId,
       actor,
       requestedFromStatus: fromStatus,
@@ -921,8 +936,8 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
         throw new ApiError(400, `Action allowed only when order is ${fromStatus}`);
       }
 
-      console.log("Fallback completion triggered");
-      console.info("dev fallback transition bypass", {
+      logger.info({ event: "order.fallback_completion" });
+      logger.warn({ event: "order.dev_fallback_bypass", 
         orderId,
         fromStatus: current.status,
         toStatus,
@@ -944,7 +959,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
         transitionStatus = toStatus;
         const effectiveDriverId = forcedResult.rows[0]?.driver_id || current.driver_id;
 
-        console.log(`Forced ${toStatus} for order:`, orderId);
+        logger.info({ event: "order.forced_status", status: toStatus, orderId });
         if (toStatus === "DELIVERED") {
           deliveredSideEffectOrder = {
             id: orderId,
@@ -1025,8 +1040,17 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
   await publishOrderEvent({ redis, orderId, status: transitionStatus });
 
   const updated = await getOrderRowOrThrow({ orderId, db });
-  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: updated });
+  await publishOrderStatusChangedEvent({ kafkaProducer, orderRow: updated, traceId });
   const items = await getOrderItems({ orderId, db });
+
+  logger.info({
+    traceId,
+    service: "order-service",
+    event: "order.status_updated",
+    orderId,
+    status: transitionStatus
+  });
+
   return mapOrder(updated, items);
 }
 
