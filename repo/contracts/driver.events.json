@@ -1,0 +1,43 @@
+[
+  {
+    "event": "driver.location.updated.v1",
+    "topic": "driver-events",
+    "source": "driver-service",
+    "fields": [
+      "traceId",
+      "version",
+      "driverId",
+      "lat",
+      "lng",
+      "orderId",
+      "timestamp"
+    ]
+  },
+  {
+    "event": "driver.online.v1",
+    "topic": "driver-events",
+    "source": "driver-service",
+    "fields": [
+      "traceId",
+      "version",
+      "driverId",
+      "lat",
+      "lng",
+      "orderId",
+      "timestamp"
+    ]
+  },
+  {
+    "event": "driver.offline.v1",
+    "topic": "driver-events",
+    "source": "driver-service",
+    "fields": [
+      "traceId",
+      "version",
+      "driverId",
+      "lat",
+      "lng",
+      "timestamp"
+    ]
+  }
+]

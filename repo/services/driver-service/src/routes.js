@@ -11,7 +11,7 @@ function normalizeRole(role) {
   return String(role || "").toLowerCase();
 }
 
-async function publishDriverEvent({ kafkaProducer, eventType, payload }) {
+async function publishDriverEvent({ kafkaProducer, eventType, payload, traceId }) {
   if (!kafkaProducer) {
     return;
   }
@@ -26,6 +26,7 @@ async function publishDriverEvent({ kafkaProducer, eventType, payload }) {
     topic: KAFKA_TOPICS.driverEvents,
     event,
     key: payload.driverId,
+    traceId,
   });
 }
 
@@ -101,6 +102,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
               lng: payload.lng,
               orderId: payload.currentOrderId || null,
             },
+            traceId: req.traceId,
           });
         }
 
@@ -113,6 +115,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
             lng: payload.lng,
             orderId: payload.currentOrderId || null,
           },
+            traceId: req.traceId,
         });
 
         res.status(200).json(payload);
@@ -160,6 +163,7 @@ function createDriverRouter({ db, redis, kafkaProducer }) {
           lat: row.lat !== null ? Number(row.lat) : null,
           lng: row.lng !== null ? Number(row.lng) : null,
         },
+        traceId: req.traceId,
       });
 
       res.status(200).json({

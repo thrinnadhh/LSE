@@ -1,5 +1,9 @@
+require("../../../../src/tracing"); // MUST be first
+
 const express = require("express");
 const http = require("http");
+const { context, trace } = require("@opentelemetry/api");
+const logger = require("../../../../src/logger");
 const { pool, ensureAuthTables, ensureTrackingTables, ensureBaseTables } = require("./lib/db");
 const { redis } = require("./lib/redis");
 const { connectProducer } = require("./lib/kafka");
@@ -34,8 +38,22 @@ const server = http.createServer(app);
 
 app.use(express.json());
 
+// Trace ID Middleware
 app.use((req, res, next) => {
-  console.log(`${req.method} ${req.url}`);
+  const span = trace.getSpan(context.active());
+  if (span) {
+    req.traceId = span.spanContext().traceId;
+  }
+  next();
+});
+
+app.use((req, res, next) => {
+  logger.info({
+    traceId: req.traceId,
+    method: req.method,
+    url: req.url,
+    event: "http.request"
+  });
   next();
 });
 
@@ -69,8 +87,8 @@ async function start() {
   await ensureBaseTables();
   await ensureAuthTables();
   await ensureTrackingTables();
-  console.log("User preference engine active");
-  console.log("Behavior tracking enabled");
+  logger.info({ event: "system.info", message: "User preference engine active" });
+  logger.info({ event: "system.info", message: "Behavior tracking enabled" });
   await ensureShopTables(pool);
   await ensureProductTables(pool);
   await ensureUserCommerceTables(pool);
@@ -96,7 +114,7 @@ async function start() {
   app.use("/drivers", authMiddleware, createDriverRouter({ db: pool, redis, kafkaProducer }));
   app.use("/home", authMiddleware, createHomeRouter({ db: pool }));
   app.use("/", createOrderRouter({ db: pool, redis, kafkaProducer }));
-  console.log("Home route mounted");
+  logger.info({ event: "system.info", message: "Home route mounted" });
   const chatRouter = createChatRouter({
     db: pool,
     onMessagePersisted: chatRealtime.publishChatMessage,
@@ -106,11 +124,11 @@ async function start() {
   app.use(errorHandler);
 
   server.listen(config.port, () => {
-    console.log(`api-gateway listening on port ${config.port}`);
+    logger.info({ event: "server.started", port: config.port, message: `api-gateway listening on port ${config.port}` });
   });
 }
 
 start().catch((err) => {
-  console.error("failed to start api-gateway", err);
+  logger.error({ event: "server.startup_failed", error: err.message, stack: err.stack });
   process.exit(1);
 });

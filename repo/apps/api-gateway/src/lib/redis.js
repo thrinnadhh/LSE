@@ -1,5 +1,6 @@
 const Redis = require("ioredis");
 const { config } = require("./config");
+const logger = require("../../../../../src/logger");
 
 const redis = new Redis(config.redisUrl, {
   maxRetriesPerRequest: 0,
@@ -11,7 +12,7 @@ const redis = new Redis(config.redisUrl, {
 });
 
 redis.on("error", (err) => {
-  console.error("redis connection error", err.message);
+  logger.error({ event: "redis.connection_error", error: err.message });
 });
 
 module.exports = { redis };

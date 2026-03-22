@@ -16,7 +16,7 @@ function createProductRouter({ db, producer }) {
     requireAuth,
     asyncHandler(async (req, res) => {
       try {
-        const product = await productService.createProduct({ body: req.body, auth: req.auth, db, producer });
+        const product = await productService.createProduct({ body: req.body, auth: req.auth, db, producer, traceId: req.traceId });
         res.status(201).json(product);
       } catch (err) {
         if (err instanceof z.ZodError) {
