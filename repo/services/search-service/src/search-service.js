@@ -1,5 +1,7 @@
 const { z } = require("zod");
 const { openSearchRequest } = require("../../../apps/api-gateway/src/lib/search");
+const { upsertUserPreference } = require("../../../lib/user-preferences");
+const { recordAnalyticsEvent } = require("../../tracking-service/src/tracking-service");
 
 const PRODUCTS_INDEX = "products_index";
 
@@ -11,6 +13,12 @@ const searchProductsSchema = z.object({
   radius: z.coerce.number().positive().max(50000).optional(),
 });
 
+const PREFERENCE_BOOST = 3;
+const REPEAT_SHOP_BOOST = 2;
+const HIGH_RATING_BOOST = 1;
+const HIGH_RATING_THRESHOLD = 4.5;
+const MAX_DISTANCE_KM_FOR_BOOST = 5;
+
 // Support both 'lng' and 'lon' (common test tool alias)
 const searchShopsSchema = z.object({
   q: z.string().trim().optional(),
@@ -20,15 +28,18 @@ const searchShopsSchema = z.object({
   radius: z.coerce.number().positive().max(50000).optional(),
 });
 
-function computeRankingScore({ baseScore, isFavorite, repeatOrderCount }) {
-  let score = Number(baseScore || 0);
+function computeRankingScore({ baseScore, hasPreference, isRepeatShop, rating, distanceMeters }) {
+  const textMatch = Number(baseScore || 0);
 
-  if (isFavorite) {
-    score += 100;
-  }
+  const behaviorBoost =
+    (hasPreference ? PREFERENCE_BOOST : 0) +
+    (isRepeatShop ? REPEAT_SHOP_BOOST : 0) +
+    (Number(rating || 0) >= HIGH_RATING_THRESHOLD ? HIGH_RATING_BOOST : 0);
 
-  score += Number(repeatOrderCount || 0) * 10;
-  return score;
+  const distanceKm = Number.isFinite(distanceMeters) ? distanceMeters / 1000 : null;
+  const distanceScore = distanceKm === null ? 0 : Math.max(0, MAX_DISTANCE_KM_FOR_BOOST - distanceKm);
+
+  return textMatch + behaviorBoost + distanceScore;
 }
 
 function getDeliveryTag(distanceMeters) {
@@ -292,17 +303,6 @@ async function searchShops({ query, db, userId = null }) {
     return fallbackSearch({ db, lat: input.lat, lng: input.lng, limit: 20 });
   }
 
-  const fastFallbackResults = await fallbackSearchByTerms({
-    db,
-    lat: input.lat,
-    lng: input.lng,
-    terms,
-    limit: 20,
-  });
-  if (fastFallbackResults.length > 0) {
-    return fastFallbackResults;
-  }
-
   // Track search event for personalization
   if (userId) {
     try {
@@ -310,6 +310,25 @@ async function searchShops({ query, db, userId = null }) {
       trackingService.trackEvent(db, userId, "SEARCH", null, { query: input.q });
     } catch (err) {
       console.error("[search] Failed to track search event:", err.message);
+    }
+
+    try {
+      await upsertUserPreference({
+        db,
+        userId,
+        shopId: null,
+        category: normalizedQuery,
+        onInsertScore: 1,
+        onConflictIncrement: 1,
+      });
+    } catch (err) {
+      console.error("[search] Failed to update user preference:", err.message);
+    }
+
+    try {
+      await recordAnalyticsEvent(db, { type: "search", value: normalizedQuery, userId });
+    } catch (err) {
+      console.error("[search] Failed to record analytics:", err.message);
     }
   }
 
@@ -407,16 +426,17 @@ async function searchShops({ query, db, userId = null }) {
 
   const shopById = new Map(shopRows.rows.map((row) => [row.id, row]));
 
-  let favoriteSet = new Set();
+  let preferenceSet = new Set();
   let repeatMap = new Map();
 
   if (userId) {
-    const [favoritesResult, repeatsResult] = await Promise.all([
+    const [preferencesResult, repeatsResult] = await Promise.all([
       db.query(
         `
           SELECT shop_id
-          FROM favorite_shops
+          FROM user_preferences
           WHERE user_id = $1
+            AND shop_id IS NOT NULL
             AND shop_id = ANY($2::uuid[])
         `,
         [userId, shopIds]
@@ -432,7 +452,7 @@ async function searchShops({ query, db, userId = null }) {
       ),
     ]);
 
-    favoriteSet = new Set(favoritesResult.rows.map((row) => row.shop_id));
+    preferenceSet = new Set(preferencesResult.rows.map((row) => row.shop_id));
     repeatMap = new Map(repeatsResult.rows.map((row) => [row.shop_id, Number(row.order_count)]));
   }
 
@@ -444,14 +464,16 @@ async function searchShops({ query, db, userId = null }) {
       }
 
       const matchedProducts = Array.from(shopMatches.get(shopId).matchedProducts).slice(0, 5);
-      const distance = Math.round(Number(shop.distance_meters || 0));
-      const isFavorite = favoriteSet.has(shopId);
+      const distanceMeters = Number(shop.distance_meters);
+      const distanceForTieBreak = Number.isFinite(distanceMeters) ? distanceMeters : Number.POSITIVE_INFINITY;
       const repeatOrderCount = repeatMap.get(shopId) || 0;
       const baseScore = shopMatches.get(shopId).baseScore || 0;
       const score = computeRankingScore({
         baseScore,
-        isFavorite,
-        repeatOrderCount,
+        hasPreference: preferenceSet.has(shopId),
+        isRepeatShop: repeatOrderCount > 0,
+        rating: Number(shop.rating || 0),
+        distanceMeters,
       });
 
       return {
@@ -460,8 +482,8 @@ async function searchShops({ query, db, userId = null }) {
         rating: Number(shop.rating || 0),
         matchedProducts,
         score,
-        deliveryTag: getDeliveryTag(distance),
-        _distanceForTieBreak: distance,
+        deliveryTag: getDeliveryTag(Number.isFinite(distanceMeters) ? Math.round(distanceMeters) : undefined),
+        _distanceForTieBreak: distanceForTieBreak,
       };
     })
     .filter(Boolean)

@@ -84,6 +84,39 @@ async function ensureTrackingTables() {
     CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
     ON notifications(user_id, is_read, created_at DESC);
   `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id UUID,
+      shop_id UUID,
+      category TEXT,
+      score INT DEFAULT 1,
+      updated_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (user_id, shop_id, category)
+    );
+  `);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_preferences_user
+    ON user_preferences(user_id, score DESC, updated_at DESC);
+  `);
+
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS analytics_events (
+      type TEXT,
+      value TEXT,
+      user_id UUID,
+      product_id UUID,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+  `);
+
+  await pool.query(`ALTER TABLE analytics_events ADD COLUMN IF NOT EXISTS product_id UUID;`);
+
+  await pool.query(`
+    CREATE INDEX IF NOT EXISTS idx_analytics_events_type_created
+    ON analytics_events(type, created_at DESC);
+  `);
 }
 
 async function ensureBaseTables() {

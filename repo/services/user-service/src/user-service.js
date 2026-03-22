@@ -1,4 +1,8 @@
 const { ApiError } = require("../../../apps/api-gateway/src/lib/errors");
+const {
+  upsertUserPreference,
+  listUserPreferences: fetchUserPreferences,
+} = require("../../../lib/user-preferences");
 
 function toApiRole(role) {
   return String(role).toLowerCase();
@@ -55,6 +59,22 @@ async function ensureUserCommerceTables(db) {
   await db.query(`
     CREATE INDEX IF NOT EXISTS idx_shop_customer_stats_user
     ON shop_customer_stats(customer_id, order_count DESC, last_order_at DESC);
+  `);
+
+  await db.query(`
+    CREATE TABLE IF NOT EXISTS user_preferences (
+      user_id UUID,
+      shop_id UUID,
+      category TEXT,
+      score INT DEFAULT 1,
+      updated_at TIMESTAMP DEFAULT NOW(),
+      PRIMARY KEY (user_id, shop_id, category)
+    );
+  `);
+
+  await db.query(`
+    CREATE INDEX IF NOT EXISTS idx_user_preferences_user
+    ON user_preferences(user_id, score DESC, updated_at DESC);
   `);
 }
 
@@ -180,6 +200,11 @@ async function listRegularShops({ userId, db, limit = 10 }) {
   }));
 }
 
+async function listUserPreferences({ userId, db, limit = 10 }) {
+  const items = await fetchUserPreferences({ db, userId, limit });
+  return items;
+}
+
 module.exports = {
   ensureUserCommerceTables,
   getMe,
@@ -187,4 +212,5 @@ module.exports = {
   removeFavoriteShop,
   listFavoriteShops,
   listRegularShops,
+  listUserPreferences,
 };

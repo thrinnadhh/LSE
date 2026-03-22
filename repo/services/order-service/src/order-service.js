@@ -7,6 +7,9 @@ const {
   updateDriverGeoIndex,
 } = require("../../dispatch-service/src/availability-store");
 const { calculateDistanceKm } = require("../../../lib/geo/distance");
+const { recordAnalyticsEvent: trackAnalyticsEvent } = require("../../tracking-service/src/tracking-service");
+
+const DEFAULT_PREFERENCE_CATEGORY = "general";
 
 const assignDriverSchema = z.object({
   driverId: z.string().uuid(),
@@ -448,48 +451,107 @@ async function getOrderItems({ orderId, db }) {
   return itemsResult.rows.map(mapOrderItem);
 }
 
-async function recordShopCustomerCompletion({ db, shopId, customerId }) {
-  if (!shopId || !customerId) {
-    return;
-  }
+async function recordShopCustomerCompletion({ db, order }) {
+  if (!db || !order?.shop_id || !order?.customer_id) return;
 
   await db.query(
     `
-      INSERT INTO shop_customer_stats (shop_id, customer_id, user_id, order_count, last_order_at)
-      VALUES ($1, $2, $2, 1, NOW())
+      INSERT INTO shop_customer_stats (shop_id, customer_id, order_count, last_order_at)
+      VALUES ($1, $2, 1, NOW())
       ON CONFLICT (shop_id, customer_id)
       DO UPDATE SET
-        user_id = EXCLUDED.customer_id,
         order_count = shop_customer_stats.order_count + 1,
         last_order_at = NOW()
     `,
-    [shopId, customerId]
+    [order.shop_id, order.customer_id]
   );
+}
 
-  const stats = await db.query(
+async function recordUserPreference({ db, order }) {
+  if (!db || !order?.shop_id || !order?.customer_id) return;
+
+  const category = order.category || order.shop_category || DEFAULT_PREFERENCE_CATEGORY;
+
+  await db.query(
     `
-      SELECT order_count
-      FROM shop_customer_stats
-      WHERE shop_id = $1
-        AND customer_id = $2
-      LIMIT 1
+      INSERT INTO user_preferences (user_id, shop_id, category, score)
+      VALUES ($1, $2, $3, 2)
+      ON CONFLICT (user_id, shop_id, category)
+      DO UPDATE SET
+        score = user_preferences.score + 2,
+        updated_at = NOW()
     `,
-    [shopId, customerId]
+    [order.customer_id, order.shop_id, category]
   );
+}
 
-  const orderCount = Number(stats.rows[0]?.order_count || 0);
-  console.info("stats updated", { shopId, customerId, orderCount });
+async function recordAnalyticsEvent({ db, order }) {
+  if (!db || !order?.shop_id || !order?.customer_id) return;
 
-  if (orderCount >= 3) {
-    await db.query(
+  await db.query(
+    `
+      INSERT INTO analytics_events (type, value, user_id, product_id)
+      VALUES ('order', $1, $2, NULL)
+    `,
+    [order.shop_id, order.customer_id]
+  );
+}
+
+async function runDeliveredSideEffects({ db, order }) {
+  if (!db || !order) return;
+
+  try {
+    console.log("DELIVERED → stats update");
+    console.log("DELIVERED → preferences update");
+    console.log("DELIVERED → analytics logged");
+
+    await Promise.all([
+      recordShopCustomerCompletion({ db, order }),
+      recordUserPreference({ db, order }),
+      recordAnalyticsEvent({ db, order }),
+    ]);
+
+    await recordOrderAnalytics({
+      db,
+      orderId: order.id,
+      shopId: order.shop_id,
+      customerId: order.customer_id,
+    });
+  } catch (err) {
+    console.error("Side effect failed", err);
+  }
+}
+
+async function recordOrderAnalytics({ db, orderId, shopId, customerId }) {
+  if (!orderId || !shopId) return;
+
+  try {
+    await trackAnalyticsEvent(db, { type: "order", value: shopId, userId: customerId, productId: null });
+  } catch (err) {
+    console.error("[order] Failed to record shop analytics:", err.message);
+  }
+
+  try {
+    const items = await db.query(
       `
-        INSERT INTO favorite_shops (user_id, shop_id)
-        VALUES ($1, $2)
-        ON CONFLICT (user_id, shop_id)
-        DO NOTHING
+        SELECT product_id
+        FROM order_items
+        WHERE order_id = $1
       `,
-      [customerId, shopId]
+      [orderId]
     );
+
+    for (const row of items.rows) {
+      if (!row.product_id) continue;
+      await trackAnalyticsEvent(db, {
+        type: "order",
+        value: row.product_id,
+        userId: customerId,
+        productId: row.product_id,
+      });
+    }
+  } catch (err) {
+    console.error("[order] Failed to record product analytics:", err.message);
   }
 }
 
@@ -750,6 +812,7 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
   const allowDevManualCompletion = process.env.NODE_ENV !== "production" && actor === "driver" && toStatus === "DELIVERED";
   const role = normalizeRole(auth.role);
   let driverProfileId = null;
+  let deliveredSideEffectOrder = null;
 
   if (actor === "shop") {
     if (role !== "shop_owner") {
@@ -883,12 +946,11 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
 
         console.log(`Forced ${toStatus} for order:`, orderId);
         if (toStatus === "DELIVERED") {
-          console.log("DELIVERED reached -> updating stats");
-          await recordShopCustomerCompletion({
-            db,
-            shopId: current.shop_id,
-            customerId: current.customer_id,
-          });
+          deliveredSideEffectOrder = {
+            id: orderId,
+            shop_id: current.shop_id,
+            customer_id: current.customer_id,
+          };
         }
 
         if (effectiveDriverId) {
@@ -937,17 +999,11 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
       }
 
       if (toStatus === "DELIVERED") {
-        console.log("DELIVERED reached -> updating stats", {
-          orderId,
-          shopId: current.shop_id,
-          customerId: current.customer_id,
-        });
-
-        await recordShopCustomerCompletion({
-          db,
-          shopId: current.shop_id,
-          customerId: current.customer_id,
-        });
+        deliveredSideEffectOrder = {
+          id: orderId,
+          shop_id: current.shop_id,
+          customer_id: current.customer_id,
+        };
       }
     }
 
@@ -960,6 +1016,10 @@ async function updateOrderStatus({ orderId, auth, db, redis, kafkaProducer, from
   if (driverIdForRelease) {
     await setDriverBusy({ redis, driverId: driverIdForRelease, isBusy: false });
     await setDriverOnline({ redis, driverId: driverIdForRelease, isOnline: true });
+  }
+
+  if (transitionStatus === "DELIVERED" && deliveredSideEffectOrder) {
+    await runDeliveredSideEffects({ db, order: deliveredSideEffectOrder });
   }
 
   await publishOrderEvent({ redis, orderId, status: transitionStatus });

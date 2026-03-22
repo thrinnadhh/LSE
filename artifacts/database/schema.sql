@@ -454,11 +454,13 @@ CREATE TABLE notifications (
   payload JSONB NOT NULL,
   status VARCHAR(20) NOT NULL,
   provider_message_id VARCHAR(120),
+  is_read BOOLEAN DEFAULT FALSE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   sent_at TIMESTAMPTZ
 );
 
 CREATE INDEX idx_notifications_user_time ON notifications(user_id, created_at DESC);
+CREATE INDEX idx_notifications_user_unread ON notifications(user_id, is_read, created_at DESC);
 
 CREATE TABLE moderation_reports (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -521,6 +523,16 @@ CREATE TABLE IF NOT EXISTS user_events (
 );
 
 CREATE INDEX idx_user_events_user_type ON user_events(user_id, event_type);
+
+CREATE TABLE IF NOT EXISTS analytics_events (
+  type TEXT,
+  value TEXT,
+  user_id UUID,
+  product_id UUID,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_analytics_events_type_created ON analytics_events(type, created_at DESC);
 
 -- =========================
 -- PARTITIONING GUIDANCE (OPTIONAL)

@@ -18,13 +18,16 @@ const STATIC_CATEGORIES = [
   { id: "movies", name: "Movies" },
 ];
 
-function computeRankingScore({ baseScore, isFavorite, repeatOrderCount }) {
-  let score = Number(baseScore || 0);
-  if (isFavorite) {
-    score += 100;
-  }
-  score += Number(repeatOrderCount || 0) * 10;
-  return score;
+function computeRecommendationScore({ preferenceScore, repeatOrderScore, rating, distanceMeters }) {
+  const distanceKm = Number.isFinite(distanceMeters) ? distanceMeters / 1000 : null;
+  const distanceScore = distanceKm === null ? 0 : Math.max(0, 5 - distanceKm);
+
+  return (
+    Number(preferenceScore || 0) * 3 +
+    Number(repeatOrderScore || 0) * 2 +
+    Number(rating || 0) * 1.5 +
+    distanceScore
+  );
 }
 
 function getDeliveryTag(distanceMeters) {
@@ -89,7 +92,6 @@ async function getRegularShops({ userId, db, limit = 10 }) {
 }
 
 async function getRecommendedShops({ userId, userLat, userLng, db, limit = 20 }) {
-  // Fetch all active shops nearby with their basic info
   const result = await db.query(
     `
       SELECT
@@ -97,12 +99,18 @@ async function getRecommendedShops({ userId, userLat, userLng, db, limit = 20 })
         s.name,
         s.category,
         COALESCE(s.rating_avg, 0) AS rating,
+        COALESCE(up.score, 0) AS preference_score,
+        COALESCE(scs.order_count, 0) AS repeat_order_score,
         ST_Distance(
           COALESCE(sl.location, s.location),
           ST_SetSRID(ST_Point($3, $2), 4326)::geography
         ) AS distance_meters
       FROM shops s
       LEFT JOIN shop_locations sl ON sl.shop_id = s.id
+      LEFT JOIN user_preferences up
+        ON up.shop_id = s.id AND up.user_id = $4
+      LEFT JOIN shop_customer_stats scs
+        ON scs.shop_id = s.id AND scs.customer_id = $4
       WHERE COALESCE(s.is_active, TRUE) = TRUE
         AND ST_DWithin(
           COALESCE(sl.location, s.location),
@@ -112,49 +120,17 @@ async function getRecommendedShops({ userId, userLat, userLng, db, limit = 20 })
       ORDER BY distance_meters ASC
       LIMIT $1
     `,
-    [limit * 2, userLat, userLng]
+    [limit * 2, userLat, userLng, userId]
   );
 
-  const shopIds = result.rows.map((row) => row.id);
-  if (shopIds.length === 0) {
-    return [];
-  }
-
-  // Fetch favorites and repeat stats in batch
-  const [favoritesResult, repeatsResult] = await Promise.all([
-    db.query(
-      `
-        SELECT shop_id
-        FROM favorite_shops
-        WHERE user_id = $1 AND shop_id = ANY($2::uuid[])
-      `,
-      [userId, shopIds]
-    ),
-    db.query(
-      `
-        SELECT shop_id, order_count
-        FROM shop_customer_stats
-        WHERE customer_id = $1 AND shop_id = ANY($2::uuid[])
-      `,
-      [userId, shopIds]
-    ),
-  ]);
-
-  const favoriteSet = new Set(favoritesResult.rows.map((row) => row.shop_id));
-  const repeatMap = new Map(
-    repeatsResult.rows.map((row) => [row.shop_id, Number(row.order_count)])
-  );
-
-  // Apply ranking score and filter
   const recommended = result.rows
     .map((row) => {
-      const isFavorite = favoriteSet.has(row.id);
-      const repeatOrderCount = repeatMap.get(row.id) || 0;
       const distance = Math.round(Number(row.distance_meters || 0));
-      const score = computeRankingScore({
-        baseScore: 50, // baseline score for nearby shops
-        isFavorite,
-        repeatOrderCount,
+      const score = computeRecommendationScore({
+        preferenceScore: row.preference_score,
+        repeatOrderScore: row.repeat_order_score,
+        rating: Number(row.rating || 0),
+        distanceMeters: row.distance_meters,
       });
 
       return {
@@ -164,12 +140,14 @@ async function getRecommendedShops({ userId, userLat, userLng, db, limit = 20 })
         rating: Number(row.rating || 0),
         deliveryTag: getDeliveryTag(distance),
         score,
-        _distance: distance, // internal only
       };
     })
-    .sort((a, b) => b.score - a.score || a._distance - b._distance)
-    .slice(0, limit)
-    .map(({ score: _score, _distance: _internalDistance, ...item }) => item);
+    .sort((a, b) => b.score - a.score)
+    .slice(0, limit);
+
+  if (recommended.length === 0) {
+    return getPopularShops({ db, limit });
+  }
 
   return recommended;
 }
@@ -315,10 +293,10 @@ async function getHomepage({ userId, userLat, userLng, db }) {
     getRegularShops({ userId, db, limit: 10 }),
   ]);
 
-  // STEP 6: INTEGRATE INTO /home — Use Phase 14.1 personalized recommendations
+  // Behavior-based recommendations (Phase 13.2)
   let recommended = [];
   try {
-    recommended = await getPersonalizedRecommended({
+    recommended = await getRecommendedShops({
       userId,
       userLat,
       userLng,
@@ -326,7 +304,7 @@ async function getHomepage({ userId, userLat, userLng, db }) {
       limit: 20,
     });
   } catch (err) {
-    console.warn("[home] Phase 14.1 personalized recommendations failed:", err.message);
+    console.warn("[home] Behavior-based recommendations failed:", err.message);
   }
 
   // Fallback for empty favorites
@@ -341,10 +319,10 @@ async function getHomepage({ userId, userLat, userLng, db }) {
     regularShops = await getTrendingShops({ db, limit: 10 });
   }
 
-  // STEP 5: FALLBACK (MANDATORY) — Use trending shops if no personalized recommendations
+  // Fallback for empty recommendations — use popular shops
   if (!recommended || recommended.length === 0) {
-    console.log("[Phase 14.1] No personalized recommendations, using diversified fallback");
-    recommended = await getTrendingShops({ db, limit: 20 });
+    console.log("[Phase 13.2] No behavior data, using popular shops fallback");
+    recommended = await getPopularShops({ db, limit: 20 });
   }
 
   console.log("Homepage sections ready", {
